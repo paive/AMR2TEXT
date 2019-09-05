@@ -2,11 +2,12 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-22 09:26:02
-@LastEditTime: 2019-09-02 09:40:19
+@LastEditTime: 2019-09-05 11:32:58
 @LastEditors: Please set LastEditors
 '''
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from utils import get_acti_fun
 import constants as C
 
@@ -82,3 +83,66 @@ class ScaledDotProductAttention(nn.Module):
         attn = self.dropout(attn)
         output = torch.bmm(attn, v)
         return output, attn
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self,
+                 query_dim,
+                 key_dim,
+                 num_units,
+                 dropout_p=0.5,
+                 h=8):
+        super(MultiHeadAttention, self).__init__()
+
+        if query_dim != key_dim:
+            raise ValueError("query_dim and key_dim must be the same")
+        if num_units % h != 0:
+            raise ValueError("num_units must be dividable by h")
+        if query_dim != num_units:
+            raise ValueError("to employ residual connection, the number of "
+                             "query_dim and num_units must be the same")
+
+        self._num_units = num_units
+        self._h = h
+        self._key_dim = torch.tensor(key_dim, requires_grad=False).float()
+
+        self.dropout_layer = nn.Dropout(dropout_p)
+        self.query_layer = nn.Linear(query_dim, num_units, bias=False)
+        self.key_layer = nn.Linear(key_dim, num_units, bias=False)
+        self.value_layer = nn.Linear(key_dim, num_units, bias=False)
+
+    def forward(self, query, keys, mask):
+        Q = self.query_layer(query)
+        K = self.key_layer(keys)
+        V = self.value_layer(keys)
+
+        # split each Q, K and V into h different values from dim 2
+        # and then merge them back together in dim 0
+        chunk_size = int(self._num_units / self._h)
+        Q = torch.cat(Q.split(split_size=chunk_size, dim=2), dim=0)
+        K = torch.cat(K.split(split_size=chunk_size, dim=2), dim=0)
+        V = torch.cat(V.split(split_size=chunk_size, dim=2), dim=0)
+
+        # calculate QK^T
+        attn = torch.matmul(Q, K.transpose(1, 2))
+        # normalize with sqrt(dk)
+        attn = attn / torch.sqrt(self._key_dim).cuda()
+
+        if mask is not None:
+            mask = mask.repeat(self._h, 1, 1)
+            zero_vec = torch.ones_like(mask) * C.MINIMUM_VALUE
+            attn = torch.where(mask > 0, attn, zero_vec)
+            # attn.masked_fill_(~mask, -float('inf'))
+
+        similarity = F.softmax(attn, dim=-1)
+
+        # apply dropout
+        drop_sim = self.dropout_layer(similarity)
+        # multiplyt it with V
+        output = torch.matmul(drop_sim, V)
+        # convert attention back to its input original size
+        restore_chunk_size = int(output.size(0) / self._h)
+
+        output = torch.cat(
+            output.split(split_size=restore_chunk_size, dim=0), dim=2)
+        return output, similarity

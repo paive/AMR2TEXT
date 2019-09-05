@@ -1,15 +1,14 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-10 12:02:14
-@LastEditTime: 2019-09-02 11:30:00
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-02 19:20:08
+@LastEditTime: 2019-09-05 16:16:11
 '''
 
 import os
 import torch
 import numpy as np
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 from nltk.translate.bleu_score import corpus_bleu
 from tensorboardX import SummaryWriter
 
@@ -127,21 +126,23 @@ class TrainConfig:
         self.save_dir = args.save_dir
         self.iters = args.iters
         self.check_freq = args.checkpoint_frequency
+        self.optimizer = args.optimizer
         self.lr = args.lr
+        self.momentum = args.momentum
         self.lr_reduce_factor = args.lr_reduce_factor
         self.lr_num_not_improved = args.lr_num_not_improved
         self.patience = args.patience
-        self.weight_decay = args.weight_decay
 
     def __str__(self):
         return "\tSave dir:".ljust(C.PRINT_SPACE) + str(self.save_dir) + "\n" + \
                "\tIters:".ljust(C.PRINT_SPACE) + str(self.iters) + "\n" + \
                "\tCheck frequency:".ljust(C.PRINT_SPACE) + str(self.check_freq) + "\n" + \
+               "\tOptimizer:".ljust(C.PRINT_SPACE) + str(self.optimizer) + "\n" + \
                "\tLearning rate:".ljust(C.PRINT_SPACE) + str(self.lr) + "\n" + \
+               "\tMomentum:".ljust(C.PRINT_SPACE) + str(self.momentum) + "\n" + \
                "\tlr reduce factor".ljust(C.PRINT_SPACE) + str(self.lr_reduce_factor) + "\n" + \
                "\tlr num not improved".ljust(C.PRINT_SPACE) + str(self.lr_num_not_improved) + "\n" + \
-               "\tPatience".ljust(C.PRINT_SPACE) + str(self.patience) + "\n" + \
-               "\tWeight decay".ljust(C.PRINT_SPACE) + str(self.weight_decay) + "\n"
+               "\tPatience".ljust(C.PRINT_SPACE) + str(self.patience) + "\n"
 
 
 def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
@@ -153,10 +154,11 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
         print("Load newest model successfully.")
 
     # optimizer
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_reduce_factor,
-                                  patience=config.lr_num_not_improved)
-    # model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
+    if config.optimizer == 'adam':
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr)
+    elif config.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(params=model.parameters(), lr=config.lr, momentum=config.momentum)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_reduce_factor, patience=config.lr_num_not_improved)
     model.train()
     train_loss = []
 
@@ -165,8 +167,6 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
         nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
         loss = model(nlabel, npos, adjs, node_mask, tokens, token_mask)
         optimizer.zero_grad()
-        # with amp.scale_loss(loss, optimizer) as scaled_loss:
-        #     scaled_loss.backward()
         loss.backward()
         optimizer.step()
         train_loss.append(float(loss))
@@ -177,34 +177,39 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
             # tensorboardX
             for name, param in model.named_parameters():
                 if param.grad is not None:
-                    writer.add_histogram(name, param.grad.clone().cpu().data.numpy(), iter_id)
+                    writer.add_histogram(name, param.data.cpu().numpy(), iter_id)
 
         # validation
         if iter_id % args.checkpoint_frequency == 0:
-            model.eval()
-            val_loss = []
-            while True:
-                batch_dicts, finish = dev_iter.next()
-                nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-                loss = model(nlabel, npos, adjs, node_mask, tokens, token_mask)
-                val_loss.append(float(loss))
-                if finish:
-                    break
-            logger.info(f"Iter {iter_id}, val loss {np.mean(val_loss)}, ppl {np.exp(np.mean(val_loss))}")
-            scheduler.step(np.mean(val_loss))
+            val_loss = validation(model, dev_iter)
+            logger.info(f"Iter {iter_id}, val loss {val_loss}, ppl {np.exp(val_loss)}")
             writer.add_scalar("val_ppl", np.exp(np.mean(val_loss)), iter_id)
-            print(f"Learning rate changes to {scheduler.optimizer.param_groups[0]['lr']}")
             # save model
-            if (best_loss is None) or (np.mean(val_loss) < best_loss):
-                best_loss = np.mean(val_loss)
+            if (best_loss is None) or (val_loss < best_loss):
+                best_loss = val_loss
                 save_model(model, config.save_dir, iter_id, best_loss)
                 best_iter = iter_id
-            model.train()
             save_trained_iters(config.save_dir, iter_id)
+            scheduler.step(val_loss)
+            print(f"Learning rate changes to {scheduler.optimizer.param_groups[0]['lr']}")
 
         # early stop
         if (iter_id - best_iter) >= config.check_freq * config.patience:
             break
+
+
+def validation(model, dev_iter):
+    model.eval()
+    val_loss = []
+    while True:
+        batch_dicts, finish = dev_iter.next()
+        nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+        loss = model(nlabel, npos, adjs, node_mask, tokens, token_mask)
+        val_loss.append(float(loss))
+        if finish:
+            break
+    model.train()
+    return np.mean(val_loss)
 
 
 class TestConfig:

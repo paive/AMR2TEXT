@@ -2,20 +2,21 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-10 12:02:29
-@LastEditTime: 2019-09-02 09:55:36
+@LastEditTime: 2019-09-05 15:29:01
 @LastEditors: Please set LastEditors
 '''
 import torch
 import torch.nn as nn
 import constants as C
-from attention import MLPAttention
+from attention import MultiHeadAttention
 
 
 class DecoderConfig:
-    def __init__(self, num_token, emb_dim, hid_dim, coverage, cell_type):
+    def __init__(self, num_token, emb_dim, hid_dim, num_heads, coverage, cell_type):
         self.num_token = num_token
         self.emb_dim = emb_dim
         self.hid_dim = hid_dim
+        self.num_heads = num_heads
         self.coverage = coverage
         self.cell_type = cell_type
 
@@ -23,6 +24,7 @@ class DecoderConfig:
         return "\tNum token:".ljust(C.PRINT_SPACE) + str(self.num_token) + "\n" + \
                "\tEmb dim".ljust(C.PRINT_SPACE) + str(self.emb_dim) + "\n" + \
                "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
+               "\tNum heads:".ljust(C.PRINT_SPACE) + str(self.num_heads) + "\n" + \
                "\tCoverage".ljust(C.PRINT_SPACE) + str(self.coverage) + "\n" + \
                "\tCell".ljust(C.PRINT_SPACE) + str(self.cell_type) + "\n"
 
@@ -45,14 +47,14 @@ class Decoder(nn.Module):
                                  input_size=self.config.emb_dim + self.config.hid_dim,
                                  hidden_size=self.config.hid_dim)
 
-        self.attention = MLPAttention(hid_dim=self.config.hid_dim,
-                                      activation='relu',
-                                      coverage=self.config.coverage)
+        self.attention = MultiHeadAttention(
+            self.config.hid_dim, self.config.hid_dim, self.config.hid_dim, h=self.config.num_heads)
 
     def _step(self, emb, value, value_mask, cov_vec=None, state=None, c1=None):
-        # caculate attention
-        query = state   # B x H
-        context, attn = self.attention(query, value, value_mask, cov_vec)   # B x N
+        query = state.unsqueeze(1)   # B x 1 x H
+        value_mask = value_mask.unsqueeze(1).float()
+        context, attn = self.attention(query, value, value_mask)   # B x 1 x N
+        context = context.squeeze(1)
         if cov_vec is not None:
             cov_vec = cov_vec + attn
         inp = torch.cat((emb, context), dim=-1)           # B x (GH+DH)

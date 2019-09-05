@@ -2,7 +2,7 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-14 14:34:46
-@LastEditTime: 2019-09-01 10:15:01
+@LastEditTime: 2019-09-05 15:21:48
 @LastEditors: Please set LastEditors
 '''
 from typing import Iterator
@@ -10,6 +10,7 @@ from copy import deepcopy
 import constants as C
 import torch
 from graphviz import Digraph
+import math
 
 
 def visualization_graph(_id, nlabels, adj, tokens, inverse_vocab):
@@ -68,6 +69,11 @@ def get_tokens(line: str) -> Iterator[str]:
             yield token
 
 
+def gelu(x):
+    return 0.5 * x * (1 + torch.tanh(
+        math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+
+
 def get_acti_fun(activation):
     if activation == 'relu':
         return torch.nn.ReLU()
@@ -75,6 +81,10 @@ def get_acti_fun(activation):
         return torch.nn.Tanh()
     elif activation == 'leakyrelu':
         return torch.nn.LeakyReLU()
+    elif activation == 'gelu':
+        return gelu
+    elif activation == 'prelu':
+        return torch.nn.PReLU()
 
 
 def deprecated(func):

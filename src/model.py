@@ -1,32 +1,33 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-25 16:21:38
-@LastEditTime: 2019-09-02 14:18:29
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-02 15:23:57
+@LastEditTime: 2019-09-05 15:30:07
 '''
+
 import torch
 import torch.nn as nn
 from allennlp.nn.util import sequence_cross_entropy_with_logits
 
 from embeder import EmbederConfig
 from embeder import Embeder
-from bidcgcn import get_dcgcn
-from bidcgcn import DCGCNConfig
+from transformergcn import TransformerGCNConfig
+from transformergcn import get_transfomergcn
 from decoder import DecoderConfig
 from decoder import Decoder
 import constants as C
 
 
 def build_encoder(args):
-    config = DCGCNConfig(input_dim=args.emb_dim * 2,
-                         output_dim=args.hid_dim,
-                         num_layers=args.num_layers[0],
-                         activation="relu",
-                         bidirection=args.encoder_bidirection,
-                         dropout=args.encoder_dropout)
+    config = TransformerGCNConfig(
+        input_dim=args.emb_dim + args.pos_emb_dim,
+        output_dim=args.hid_dim,
+        num_layers=args.num_layers[0],
+        num_heads=args.heads[0],
+        directions=4,
+        activation="gelu",
+        dropout=args.encoder_dropout)
     print("Dcgcn encoder config:\n", config)
-    encoder = get_dcgcn(config)
+    encoder = get_transfomergcn(config)
     return encoder
 
 
@@ -34,6 +35,7 @@ def build_decoder(args, vocab_size):
     decoder_config = DecoderConfig(num_token=vocab_size,
                                    emb_dim=args.emb_dim,
                                    hid_dim=args.hid_dim,
+                                   num_heads=args.heads[1],
                                    coverage=args.coverage,
                                    cell_type=args.decoder_cell)
     print("RNN decoder config:\n", decoder_config)
@@ -41,11 +43,12 @@ def build_decoder(args, vocab_size):
     return decoder
 
 
-def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id):
+def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id, dropout):
     embeder_config = EmbederConfig(num_emb=num_emb,
                                    emb_dim=emb_dim,
                                    padding_idx=pad_id,
-                                   scale_grad_by_freq=scale_grad_by_freq)
+                                   scale_grad_by_freq=scale_grad_by_freq,
+                                   dropout=dropout)
     print("Embedder config:\n", embeder_config)
     embeder = Embeder(embeder_config)
     return embeder
@@ -56,12 +59,14 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
     node_embeder = build_embeder(num_emb=len(vocab),
                                  emb_dim=args.emb_dim,
                                  scale_grad_by_freq=args.scale_grad_by_freq,
-                                 pad_id=C.PAD_ID)
+                                 pad_id=C.PAD_ID,
+                                 dropout=args.emb_dropout[0])
     logger.info("Build pos embedder...")
     pos_embeder = build_embeder(num_emb=args.max_seq_len[0],
-                                emb_dim=args.emb_dim,
+                                emb_dim=args.pos_emb_dim,
                                 scale_grad_by_freq=args.scale_grad_by_freq,
-                                pad_id=0)
+                                pad_id=0,
+                                dropout=args.emb_dropout[0])
 
     logger.info("Build encoder...")
     encoder = build_encoder(args)
@@ -74,7 +79,8 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
         token_embeder = build_embeder(num_emb=len(vocab),
                                       emb_dim=args.emb_dim,
                                       scale_grad_by_freq=args.scale_grad_by_freq,
-                                      pad_id=C.PAD_ID)
+                                      pad_id=C.PAD_ID,
+                                      dropout=args.emb_dropout[1])
 
     logger.info("Build decoder...")
     decoder = build_decoder(args, len(vocab))
@@ -86,8 +92,7 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
                   encoder=encoder,
                   decoder=decoder,
                   projector=projector,
-                  init_param=args.init_param,
-                  weight_init_scale=args.weight_init_scale)
+                  init_param=args.init_param)
     if cuda_device is not None:
         model.to(cuda_device)
     return model
@@ -101,8 +106,7 @@ class Model(nn.Module):
                  encoder,
                  decoder,
                  projector,
-                 init_param,
-                 weight_init_scale):
+                 init_param):
         super(Model, self).__init__()
         self.node_embeder = node_embeder
         self.pos_embeder = pos_embeder
@@ -111,20 +115,22 @@ class Model(nn.Module):
         self.decoder = decoder
         self.projector = projector
         if init_param:
-            self._init_param(weight_init_scale)
+            self._init_param()
 
-    def _init_param(self, weight_init_scale):
+    def _init_param(self):
         for name, param in self.named_parameters():
-            if "embeder" in name:
+            if 'embeder' in name:
                 continue
-            elif 'weight_ih' in name:
-                torch.nn.init.orthogonal_(param, gain=weight_init_scale)
-            elif 'weight_hh' in name:
-                torch.nn.init.orthogonal_(param, gain=weight_init_scale)
-            elif 'weight' in name:
-                torch.nn.init.xavier_uniform_(param, gain=weight_init_scale)
-            elif 'bias' in name:
-                torch.nn.init.zeros_(param)
+            elif ('weight_ih' in name) or ('weight_hh' in name):
+                torch.nn.init.orthogonal_(param)
+            elif param.dim() > 2:
+                torch.nn.init.kaiming_uniform_(param, a=1, mode='fan_in')
+
+    def embedding_graph(self, nlabel, npos):
+        nembeding = self.node_embeder(nlabel)
+        pembeding = self.pos_embeder(npos)
+        h = torch.cat((nembeding, pembeding), dim=-1)
+        return h
 
     def encode_graph(self, adjs, h, node_mask):
         """Encode graph with an encoder"""
@@ -149,22 +155,18 @@ class Model(nn.Module):
         return logits
 
     def forward(self, nlabel, npos, adjs, node_mask, tokens, token_mask):
-        nembeding = self.node_embeder(nlabel)
-        pembeding = self.pos_embeder(npos)
-        h = torch.cat((nembeding, pembeding), dim=-1)
-
+        h = self.embedding_graph(nlabel, npos)
         value, state = self.encode_graph(adjs, h, node_mask)
         logits = self.decode_tokens(tokens, value, node_mask, state)
 
         targets = tokens[:, 1:].contiguous()
-        weights = token_mask[:, 1:]
+        weights = token_mask[:, 1:].float()
         loss = sequence_cross_entropy_with_logits(logits=logits, targets=targets, weights=weights)
         return loss
 
     def predict(self, start_tokens, nlabel, npos, adjs, node_mask, max_step):
-        value, state = self.encode_graph(nlabel, npos, adjs, node_mask)
-        if self.emb2hid is not None:
-            state = self.emb2hid(state)
+        h = self.embedding_graph(nlabel, npos)
+        value, state = self.encode_graph(adjs, h, node_mask)
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
 

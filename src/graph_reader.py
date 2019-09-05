@@ -1,10 +1,9 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-13 21:47:53
-@LastEditTime: 2019-09-02 11:05:36
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-02 19:02:41
+@LastEditTime: 2019-09-05 14:42:40
 '''
+
 import numpy as np
 from instance import Instance
 from instance import pad_instance
@@ -14,7 +13,7 @@ import math
 
 
 class IteratorBase:
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=None):
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio):
         with open(amr_path, 'r') as f:
             amr_lines = f.readlines()
         with open(grp_path, 'r') as f:
@@ -46,9 +45,11 @@ class IteratorBase:
 
 
 class Iterator(IteratorBase):
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=None):
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path,
+                 max_src_len, max_tgt_len, keep_ratio=None, edge_variation=None):
         super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
+        self.edge_variation = edge_variation
 
     def next(self):
         if self.cur == 0:
@@ -75,7 +76,7 @@ class Iterator(IteratorBase):
             src_len = max(src_len, len(ins.indexed_node))
             tgt_len = max(tgt_len, len(ins.indexed_token))
         for ins in batch_instances:
-            new_ins = pad_instance(ins, src_len, tgt_len)
+            new_ins = pad_instance(ins, src_len, tgt_len, edge_variation=self.edge_variation)
             tokens.append(new_ins.indexed_token)
             token_mask.append(new_ins.token_mask)
             nodes.append(new_ins.indexed_node)

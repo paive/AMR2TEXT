@@ -2,7 +2,7 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-13 22:16:00
-@LastEditTime: 2019-08-29 15:39:31
+@LastEditTime: 2019-09-03 21:08:00
 @LastEditors: Please set LastEditors
 '''
 
@@ -28,3 +28,4 @@ GLOGAL_EDGE_ID = 4
 
 PRINT_SPACE = 20
 MINIMUM_VALUE = -1e15
+EPSILON = 1e-15

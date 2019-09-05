@@ -1,10 +1,9 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-14 14:37:19
-@LastEditTime: 2019-09-02 11:30:25
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-02 15:24:08
+@LastEditTime: 2019-09-05 17:32:39
 '''
+
 import argparse
 import constants as C
 
@@ -67,16 +66,17 @@ def get_arguments():
 
     # model
     parser.add_argument('--emb_dim', type=int, default=360)
+    parser.add_argument('--pos_emb_dim', type=int, default=300)
+    parser.add_argument('--emb_dropout', type=multiple_values(2, 0), default=(.5, .5))
     parser.add_argument('--scale_grad_by_freq', type=bool, default=True)
     parser.add_argument('--weight_tying', type=bool, default=True)
-    parser.add_argument('--hid_dim', type=int, default=720)
-    parser.add_argument('--num_layers', type=multiple_values(2, 1), default=(4, 1))
+    parser.add_argument('--hid_dim', type=int, default=512)
+    parser.add_argument('--num_layers', type=multiple_values(2, 1), default=(8, 1))
+    parser.add_argument('--heads', type=multiple_values(2, 1), default=(16, 8))
     parser.add_argument('--encoder_dropout', type=float, default=0.1)
-    parser.add_argument('--encoder_bidirection', type=bool, default=True)
-    parser.add_argument('--decoder_cell', type=str, default='GRU')
-    parser.add_argument('--coverage', type=bool, default=True)
+    parser.add_argument('--decoder_cell', type=str, default='LSTM')
+    parser.add_argument('--coverage', type=bool, default=False)
     parser.add_argument('--init_param', type=bool, default=False)
-    parser.add_argument('--weight_init_scale', type=float, default=1)
     parser.add_argument('--save_dir', type=str, default='./save')
 
     # predict
@@ -86,11 +86,15 @@ def get_arguments():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--iters', type=int, default=2000000)
     parser.add_argument('--checkpoint-frequency', type=int, default=1000)
+    parser.add_argument('--optimizer', type=str, default='adam')
     parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--momentum', type=float, default=0.95)
     parser.add_argument('--lr_reduce_factor', type=float, default=0.7)
-    parser.add_argument('--lr_num_not_improved', type=int, default=5)
-    parser.add_argument('--patience', type=int, default=10)
-    parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--lr_num_not_improved', type=int, default=2)
+    parser.add_argument('--patience', type=int, default=15)
+    # parser.add_argument('--weight_decay', type=float, default=0.)
+    # parser.add_argument('--label_smoothing', type=float, default=0.)
+    # parser.add_argument('--edge_variation', type=float)
 
     args, _ = parser.parse_known_args()
     return args

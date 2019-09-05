@@ -1,26 +1,27 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-15 08:58:56
-@LastEditTime: 2019-09-02 10:14:47
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-02 15:24:04
+@LastEditTime: 2019-09-02 19:02:31
 '''
+
 import torch.nn as nn
 import constants as C
 
 
 class EmbederConfig:
-    def __init__(self, num_emb, emb_dim, padding_idx, scale_grad_by_freq):
+    def __init__(self, num_emb, emb_dim, padding_idx, scale_grad_by_freq, dropout):
         self.num_emb = num_emb
         self.emb_dim = emb_dim
         self.padding_idx = padding_idx
         self.scale_grad_by_freq = scale_grad_by_freq
+        self.dropout = dropout
 
     def __str__(self):
         return "\tNum emb:".ljust(C.PRINT_SPACE) + str(self.num_emb) + "\n" + \
                "\tEmb dim".ljust(C.PRINT_SPACE) + str(self.emb_dim) + "\n" + \
                "\tPad idx:".ljust(C.PRINT_SPACE) + str(self.padding_idx) + "\n" + \
-               "\tScale factor".ljust(C.PRINT_SPACE) + str(self.scale_grad_by_freq) + "\n"
+               "\tScale factor".ljust(C.PRINT_SPACE) + str(self.scale_grad_by_freq) + "\n" + \
+               "\tDropout:".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n"
 
 
 class Embeder(nn.Module):
@@ -31,9 +32,11 @@ class Embeder(nn.Module):
                                     self.config.emb_dim,
                                     padding_idx=self.config.padding_idx,
                                     scale_grad_by_freq=self.config.scale_grad_by_freq)
+        self.dropout = nn.Dropout(self.config.dropout)
 
     def forward(self, data):
         embedding = self.embeder(data)
+        embedding = self.dropout(embedding)
         return embedding
 
     @property
