@@ -1,13 +1,13 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:52
-@LastEditTime: 2019-09-05 17:26:24
+@LastEditTime: 2019-09-06 08:58:34
 '''
 
 import torch
 import torch.nn as nn
 
-from attention import MultiHeadAttention
+# from attention import MultiHeadAttention
 from utils import get_acti_fun
 import constants as C
 
@@ -131,7 +131,7 @@ class Block(nn.Module):
 
     def _convolve(self, adj, hid):
         residual = hid
-        direct_list = []        
+        direct_list = []
         for j in range(self._directions):
             label = j + 1
             mask = (adj == label).float()

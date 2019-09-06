@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:24:08
-@LastEditTime: 2019-09-05 17:32:39
+@LastEditTime: 2019-09-05 20:29:44
 '''
 
 import argparse
@@ -74,7 +74,7 @@ def get_arguments():
     parser.add_argument('--num_layers', type=multiple_values(2, 1), default=(8, 1))
     parser.add_argument('--heads', type=multiple_values(2, 1), default=(16, 8))
     parser.add_argument('--encoder_dropout', type=float, default=0.1)
-    parser.add_argument('--decoder_cell', type=str, default='LSTM')
+    parser.add_argument('--decoder_cell', type=str, default='GRU')
     parser.add_argument('--coverage', type=bool, default=False)
     parser.add_argument('--init_param', type=bool, default=False)
     parser.add_argument('--save_dir', type=str, default='./save')
@@ -90,9 +90,9 @@ def get_arguments():
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--momentum', type=float, default=0.95)
     parser.add_argument('--lr_reduce_factor', type=float, default=0.7)
-    parser.add_argument('--lr_num_not_improved', type=int, default=2)
+    parser.add_argument('--lr_num_not_improved', type=int, default=5)
     parser.add_argument('--patience', type=int, default=15)
-    # parser.add_argument('--weight_decay', type=float, default=0.)
+    parser.add_argument('--weight_decay', type=float, default=1e-5)
     # parser.add_argument('--label_smoothing', type=float, default=0.)
     # parser.add_argument('--edge_variation', type=float)
 

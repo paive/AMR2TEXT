@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:41
-@LastEditTime: 2019-09-05 14:42:40
+@LastEditTime: 2019-09-06 08:55:18
 '''
 
 import numpy as np
@@ -195,10 +195,10 @@ class BucketIterator(IteratorBase):
 
 if __name__ == "__main__":
     from vocabulary import vocab_from_json
-    from vocabulary import vocab_to_json
-    from vocabulary import  build_from_paths
+    # from vocabulary import vocab_to_json
+    # from vocabulary import  build_from_paths
     from vocabulary import reverse_vocab
-    from utils import id2sentence
+    # from utils import id2sentence
     from utils import visualization_graph
 
     dev_amr = './data/dev.amr'

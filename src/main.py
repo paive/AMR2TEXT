@@ -1,14 +1,14 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-05 16:16:11
+@LastEditTime: 2019-09-06 08:57:19
 '''
 
 import os
 import torch
 import numpy as np
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.optim.lr_scheduler import StepLR
+# from torch.optim.lr_scheduler import StepLR
 from nltk.translate.bleu_score import corpus_bleu
 from tensorboardX import SummaryWriter
 
@@ -16,7 +16,7 @@ from vocabulary import build_from_paths
 from vocabulary import vocab_from_json
 from vocabulary import vocab_to_json
 from vocabulary import reverse_vocab
-from graph_reader import BucketIterator
+# from graph_reader import BucketIterator
 from graph_reader import Iterator
 from model import build_model
 from arguments import get_arguments
@@ -128,10 +128,11 @@ class TrainConfig:
         self.check_freq = args.checkpoint_frequency
         self.optimizer = args.optimizer
         self.lr = args.lr
-        self.momentum = args.momentum
+        # self.momentum = args.momentum
         self.lr_reduce_factor = args.lr_reduce_factor
         self.lr_num_not_improved = args.lr_num_not_improved
         self.patience = args.patience
+        self.weight_decay = args.weight_decay
 
     def __str__(self):
         return "\tSave dir:".ljust(C.PRINT_SPACE) + str(self.save_dir) + "\n" + \
@@ -139,7 +140,7 @@ class TrainConfig:
                "\tCheck frequency:".ljust(C.PRINT_SPACE) + str(self.check_freq) + "\n" + \
                "\tOptimizer:".ljust(C.PRINT_SPACE) + str(self.optimizer) + "\n" + \
                "\tLearning rate:".ljust(C.PRINT_SPACE) + str(self.lr) + "\n" + \
-               "\tMomentum:".ljust(C.PRINT_SPACE) + str(self.momentum) + "\n" + \
+               "\tWeight decay:".ljust(C.PRINT_SPACE) + str(self.weight_decay) + "\n" + \
                "\tlr reduce factor".ljust(C.PRINT_SPACE) + str(self.lr_reduce_factor) + "\n" + \
                "\tlr num not improved".ljust(C.PRINT_SPACE) + str(self.lr_num_not_improved) + "\n" + \
                "\tPatience".ljust(C.PRINT_SPACE) + str(self.patience) + "\n"
@@ -155,7 +156,7 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
 
     # optimizer
     if config.optimizer == 'adam':
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr)
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     elif config.optimizer == 'sgd':
         optimizer = torch.optim.SGD(params=model.parameters(), lr=config.lr, momentum=config.momentum)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_reduce_factor, patience=config.lr_num_not_improved)
@@ -236,7 +237,7 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     gold_snt = []
     pred_snt = []
     while True:
-        batch_dicts, finish = test_iter.next()
+        batch_dicts, finish = train_iter.next()
         nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
         predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
         gold = id2sentence(tokens[:, 1:], inversed_vocab)
@@ -257,7 +258,7 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     print("Write output success!")
 
 
-def main(args, logger, cuda_device, writer):
+def main(args, logger, cuda_device):
     logger.info("Load vocab and build data iterators...")
     vocab, edge_vocab = build_vocab(args)
     train_iter, dev_iter, test_iter = build_dataiters(args, vocab, edge_vocab)
@@ -265,15 +266,17 @@ def main(args, logger, cuda_device, writer):
 
     if args.mode == 'train':
         logger.info("Training...")
+        writer = SummaryWriter()
         train_config = TrainConfig(args)
         print('Train config:\n', train_config)
         train(train_config, model, train_iter, dev_iter, cuda_device, logger, writer)
+        writer.close()
     elif args.mode == 'test':
         logger.info('Test...')
         test_config = TestConfig(args)
         print('Test config:\n', test_config)
         inversed_vocab = reverse_vocab(vocab)
-        test(test_config, model, train_iter, dev_iter, inversed_vocab, cuda_device)
+        test(test_config, model, train_iter, test_iter, inversed_vocab, cuda_device)
 
 
 if __name__ == "__main__":
@@ -281,6 +284,4 @@ if __name__ == "__main__":
     logger = setup_main_logger(__name__, file_logging=True, console=not args.quiet,
                                path=os.path.join(args.log_dir, C.LOG_NAME))
     cuda_device = torch.device(0)
-    writer = SummaryWriter()
-    main(args, logger, cuda_device, writer)
-    writer.close()
+    main(args, logger, cuda_device)
