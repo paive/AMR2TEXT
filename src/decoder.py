@@ -1,13 +1,15 @@
 '''
 @Author: Neo
 @Date: 2019-09-06 09:05:11
-@LastEditTime: 2019-09-06 11:14:11
+@LastEditTime: 2019-09-07 12:11:57
 '''
 
 import torch
 import torch.nn as nn
 import constants as C
-from attention import MultiHeadAttention
+from attention import MLPAttention
+from attention import BilinearAttention
+# from attention import MultiHeadAttention
 
 
 class DecoderConfig:
@@ -46,16 +48,17 @@ class Decoder(nn.Module):
                                  input_size=self.config.emb_dim + self.config.hid_dim,
                                  hidden_size=self.config.hid_dim)
 
-        self.attention = MultiHeadAttention(
-            self.config.hid_dim, self.config.hid_dim, self.config.hid_dim, h=self.config.num_heads)
+        self.attention = MLPAttention(self.config.hid_dim, self.config.coverage)
+        # self.attention = BilinearAttention(self.config.hid_dim, self.config.coverage)
+        # self.attention = MultiHeadAttention(
+        #     self.config.hid_dim, self.config.hid_dim, self.config.hid_dim, h=self.config.num_heads)
 
     def _step(self, emb, value, value_mask, cov_vec=None, state=None, c1=None):
         query = state.unsqueeze(1)   # B x 1 x H
-        value_mask = value_mask.unsqueeze(1).float()
-        context, attn = self.attention(query, value, value_mask)   # B x 1 x N
+        # value_mask = value_mask.unsqueeze(1).float()
+        # context, attn = self.attention(query, value, value_mask)   # B x 1 x N
+        context, attn, cov_vec = self.attention(query, value, value_mask, cov_vec)
         context = context.squeeze(1)
-        if cov_vec is not None:
-            cov_vec = cov_vec + attn
         inp = torch.cat((emb, context), dim=-1)           # B x (GH+DH)
         if self.config.cell_type == 'GRU':
             state = self.cell(inp, state)

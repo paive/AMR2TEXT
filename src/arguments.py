@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:24:08
-@LastEditTime: 2019-09-06 23:45:47
+@LastEditTime: 2019-09-07 19:44:39
 '''
 
 import argparse
@@ -65,7 +65,7 @@ def get_arguments():
     parser.add_argument('--heads', type=multiple_values(2, 1), default=(16, 8))
     parser.add_argument('--encoder_dropout', type=float, default=0.1)
     parser.add_argument('--decoder_cell', type=str, default='LSTM')
-    parser.add_argument('--coverage', type=bool, default=False)
+    parser.add_argument('--coverage', type=bool, default=True)
     parser.add_argument('--init_param', type=bool, default=False)
     parser.add_argument('--save_dir', type=str, default='./save')
 
