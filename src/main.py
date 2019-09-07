@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-06 08:57:19
+@LastEditTime: 2019-09-07 09:41:09
 '''
 
 import os
@@ -94,10 +94,10 @@ def build_dataiters(args, vocab, edge_vocab):
         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     dev_iter = Iterator(
-        vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_snt,
+        vocab, edge_vocab, 4, args.dev_amr, args.dev_grh, args.dev_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     test_iter = Iterator(
-        vocab, edge_vocab, args.batch_size, args.test_amr, args.test_grh, args.test_snt,
+        vocab, edge_vocab, 4, args.test_amr, args.test_grh, args.test_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     return train_iter, dev_iter, test_iter
 
@@ -218,11 +218,13 @@ class TestConfig:
         self.max_step = args.max_seq_len[1]
         self.save_dir = args.save_dir
         self.result_dir = args.result_dir
+        self.beam_size = args.beam_size
 
     def __str__(self):
         return "\tSave dir:".ljust(C.PRINT_SPACE) + str(self.save_dir) + "\n" + \
                "\tResult dir:".ljust(C.PRINT_SPACE) + str(self.result_dir) + "\n" + \
-               "\tMax step".ljust(C.PRINT_SPACE) + str(self.max_step) + "\n"
+               "\tMax step".ljust(C.PRINT_SPACE) + str(self.max_step) + "\n" + \
+               "\tBeam size".ljust(C.PRINT_SPACE) + str(self.beam_size) + "\n"
 
 
 def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
@@ -237,9 +239,11 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     gold_snt = []
     pred_snt = []
     while True:
-        batch_dicts, finish = train_iter.next()
+        batch_dicts, finish = test_iter.next()
         nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
+        predictions = model.predict_with_beam_search(
+            tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step, config.beam_size)
+        # predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
         gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
         gold_snt.extend([g] for g in gold)

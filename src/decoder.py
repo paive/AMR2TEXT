@@ -1,10 +1,9 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-10 12:02:29
-@LastEditTime: 2019-09-05 15:29:01
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-06 09:05:11
+@LastEditTime: 2019-09-06 11:14:11
 '''
+
 import torch
 import torch.nn as nn
 import constants as C
@@ -67,7 +66,7 @@ class Decoder(nn.Module):
 
     def forward(self, embeddings, value, value_mask, state):
         """
-        embeddings:     B x L x H
+        embeddings:     B x L x E
         value:          B x N x H
         value_mask:     B x N
         state:          B x H

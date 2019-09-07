@@ -2,7 +2,7 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-22 09:26:02
-@LastEditTime: 2019-09-05 11:32:58
+@LastEditTime: 2019-09-07 09:53:11
 @LastEditors: Please set LastEditors
 '''
 import torch
@@ -111,7 +111,7 @@ class MultiHeadAttention(nn.Module):
         self.key_layer = nn.Linear(key_dim, num_units, bias=False)
         self.value_layer = nn.Linear(key_dim, num_units, bias=False)
 
-    def forward(self, query, keys, mask):
+    def forward(self, query, keys, mask, cov=None):
         Q = self.query_layer(query)
         K = self.key_layer(keys)
         V = self.value_layer(keys)
@@ -143,6 +143,5 @@ class MultiHeadAttention(nn.Module):
         # convert attention back to its input original size
         restore_chunk_size = int(output.size(0) / self._h)
 
-        output = torch.cat(
-            output.split(split_size=restore_chunk_size, dim=0), dim=2)
+        output = torch.cat(output.split(split_size=restore_chunk_size, dim=0), dim=2)
         return output, similarity

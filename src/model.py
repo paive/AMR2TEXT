@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-05 15:30:07
+@LastEditTime: 2019-09-07 09:40:27
 '''
 
 import torch
@@ -163,6 +163,93 @@ class Model(nn.Module):
         weights = token_mask[:, 1:].float()
         loss = sequence_cross_entropy_with_logits(logits=logits, targets=targets, weights=weights)
         return loss
+
+    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, node_mask, max_step, beam_size):
+        h = self.embedding_graph(nlabel, npos)
+        value, state = self.encode_graph(adjs, h, node_mask)
+
+        if self.decoder.config.cell_type == 'LSTM':
+            c1 = torch.zeros_like(state)
+
+        if self.decoder.config.coverage:
+            cov_vec = torch.zeros(value.size(0), value.size(1))
+            cov_vec = cov_vec.to(value.device)
+        else:
+            cov_vec = None
+
+        history = []
+        back_pointer = []
+
+        # for the first token
+        emb = self.token_embeder(start_tokens)
+        if self.decoder.config.cell_type == 'GRU':
+            state, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state)
+        elif self.decoder.config.cell_type == 'LSTM':
+            state, c1, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state, c1)
+        logit = self.projector(state)
+        log_prob_sum, t = torch.topk(logit, k=beam_size, dim=-1)           # B x bs
+        history.append(t)
+        t = t.view(-1)                                                    # B*bs
+
+        value = value.repeat_interleave(beam_size, dim=0)                            # B*bs x N x H
+        node_mask = node_mask.repeat_interleave(beam_size, dim=0)                    # B*bs x N
+        state = state.repeat_interleave(beam_size, dim=0)                            # B*bs x H
+        if self.decoder.config.coverage:
+            cov_vec = cov_vec.repeat_interleave(beam_size, dim=0)
+        if self.decoder.config.cell_type == 'LSTM':
+            c1 = c1.repeat_interleave(beam_size, dim=0)
+
+        for idx in range(max_step-1):
+            emb = self.token_embeder(t)                                     # B*bs x E
+            if self.decoder.config.cell_type == 'GRU':
+                state, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state)
+            elif self.decoder.config.cell_type == 'LSTM':
+                state, c1, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state, c1)
+            logit = self.projector(state)                           # B*bs x V
+            log_prob, t = torch.topk(logit, k=beam_size, dim=-1)      # B*bs x bs
+
+            log_prob = log_prob.view(-1, beam_size * beam_size)         # B x bs*bs
+            t = t.view(-1, beam_size * beam_size)               # B x bs*bs
+
+            tmp_sum = log_prob_sum.repeat_interleave(beam_size, dim=-1)      # B x bs*bs
+            tmp_sum = tmp_sum + log_prob
+            log_prob_sum, pos = torch.topk(tmp_sum, beam_size, dim=-1)        # B x bs
+            t = torch.gather(t, dim=-1, index=pos)              # B x bs
+
+            hpos = (pos // beam_size)
+            history.append(t)
+            back_pointer.append(hpos)
+            t = t.view(-1)
+
+            hpos = hpos.unsqueeze(-1)             # B x bs x 1
+            statepos = hpos.repeat_interleave(state.size(-1), dim=-1)            # B x bs x H
+            state = state.view(statepos.size(0), beam_size, -1)     # B x bs x H
+            state = torch.gather(state, dim=1, index=statepos)      # B x bs x H
+            state = state.view(-1, state.size(-1))                  # B*bs x H
+            if self.decoder.config.cell_type == 'LSTM':
+                c1pos = hpos.repeat_interleave(c1.size(-1), dim=-1)
+                c1 = c1.view(c1pos.size(0), beam_size, -1)
+                c1 = torch.gather(c1, dim=1, index=c1pos)
+                c1 = c1.view(-1, c1.size(-1))
+            if self.decoder.config.coverage:
+                cov_vecpos = hpos.repeat_interleave(cov_vec.size(-1), dim=-1)
+                cov_vec = cov_vec.view(cov_vecpos.size(0), beam_size, -1)
+                cov_vec = torch.gather(cov_vec, index=cov_vecpos, dim=1)
+                cov_vec = cov_vec.view(-1, cov_vec.size(-1))
+
+        predictions = [history[-1]]
+        bp = None
+        for i in range(max_step-2, -1, -1):
+            cur_poi = back_pointer[i]                # B x bs
+            cur_his = history[i]                     # B x bs
+            if bp is None:
+                bp = cur_poi                         # B x bs
+            else:
+                bp = torch.gather(cur_poi, index=bp, dim=-1)
+            cur_t = torch.gather(cur_his, index=bp, dim=-1)
+            predictions.insert(0, cur_t)
+        predictions = torch.stack(predictions, dim=-1)
+        return predictions[:, 0]
 
     def predict(self, start_tokens, nlabel, npos, adjs, node_mask, max_step):
         h = self.embedding_graph(nlabel, npos)

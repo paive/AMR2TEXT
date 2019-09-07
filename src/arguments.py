@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:24:08
-@LastEditTime: 2019-09-05 20:29:44
+@LastEditTime: 2019-09-06 23:45:47
 '''
 
 import argparse
@@ -9,16 +9,6 @@ import constants as C
 
 
 def multiple_values(num_values=0, greater_or_equal=None, data_type=int):
-    """
-    Returns a method to be used in argument parsing to parse a string of the form "<val>:<val>[:<val>...]" into
-    a tuple of values of type data_type.
-
-    :param num_values: Optional number of ints required.
-    :param greater_or_equal: Optional constraint that all values should be greater or equal to this value.
-    :param data_type: Type of values. Default: int.
-    :return: Method for parsing.
-    """
-
     def parse(value_to_check):
         if ':' in value_to_check:
             expected_num_separators = num_values - 1 if num_values else 0
@@ -74,13 +64,14 @@ def get_arguments():
     parser.add_argument('--num_layers', type=multiple_values(2, 1), default=(8, 1))
     parser.add_argument('--heads', type=multiple_values(2, 1), default=(16, 8))
     parser.add_argument('--encoder_dropout', type=float, default=0.1)
-    parser.add_argument('--decoder_cell', type=str, default='GRU')
+    parser.add_argument('--decoder_cell', type=str, default='LSTM')
     parser.add_argument('--coverage', type=bool, default=False)
     parser.add_argument('--init_param', type=bool, default=False)
     parser.add_argument('--save_dir', type=str, default='./save')
 
     # predict
     parser.add_argument('--result_dir', type=str, default='./result')
+    parser.add_argument('--beam_size', type=int, default=10)
 
     # train
     parser.add_argument('--batch_size', type=int, default=16)
