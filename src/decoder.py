@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-06 09:05:11
-@LastEditTime: 2019-09-09 21:30:48
+@LastEditTime: 2019-09-10 09:08:52
 '''
 
 import torch
@@ -9,6 +9,7 @@ import torch.nn as nn
 import constants as C
 from attention import MLPAttention
 from utils import get_acti_fun
+from utils import deprecated
 
 
 class DecoderConfig:
@@ -53,20 +54,6 @@ class Decoder(nn.Module):
         self.hidden_dropout = nn.Dropout(self.config.dropout)
         self.hidden_mlp = nn.Linear(2*self.config.hid_dim, self.config.hid_dim)
         self.hidden_acti = get_acti_fun('tanh')
-        # self.attention = MultiHeadAttention(
-        #     self.config.hid_dim, self.config.hid_dim, self.config.hid_dim, h=self.config.num_heads)
-
-    def old_step(self, emb, value, value_mask, state=None, c1=None, cov_vec=None):
-        query = state.unsqueeze(1)   # B x 1 x H
-        context, attn, cov_vec = self.attention(query, value, value_mask, cov_vec)
-        context = context.squeeze(1)
-        inp = torch.cat((emb, context), dim=-1)           # B x (GH+DH)
-        if self.config.cell_type == 'GRU':
-            state = self.cell(inp, state)
-            return state, cov_vec, attn
-        elif self.config.cell_type == 'LSTM':
-            state, c1 = self.cell(inp, (state, c1))
-            return state, c1, cov_vec, attn
 
     def _step(self, emb, value, value_mask, state=None, c1=None, cov_vec=None):
         rnn_input = torch.cat((emb, state), dim=-1)
@@ -117,6 +104,19 @@ class Decoder(nn.Module):
         outputs = torch.stack(outputs, dim=1)
         attns = torch.stack(attns, dim=1)
         return outputs, attns
+
+    @deprecated
+    def old_step(self, emb, value, value_mask, state=None, c1=None, cov_vec=None):
+        query = state.unsqueeze(1)   # B x 1 x H
+        context, attn, cov_vec = self.attention(query, value, value_mask, cov_vec)
+        context = context.squeeze(1)
+        inp = torch.cat((emb, context), dim=-1)           # B x (GH+DH)
+        if self.config.cell_type == 'GRU':
+            state = self.cell(inp, state)
+            return state, cov_vec, attn
+        elif self.config.cell_type == 'LSTM':
+            state, c1 = self.cell(inp, (state, c1))
+            return state, c1, cov_vec, attn
 
 
 if __name__ == '__main__':

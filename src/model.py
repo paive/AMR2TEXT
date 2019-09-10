@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-09 14:28:15
+@LastEditTime: 2019-09-10 08:23:03
 '''
 
 import torch
@@ -184,9 +184,13 @@ class Model(nn.Module):
         # for the first token
         emb = self.token_embeder(start_tokens)
         if self.decoder.config.cell_type == 'GRU':
-            state, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state)
+            state, cov_vec, similarity = self.decoder._step(
+                emb=emb, value=value, value_mask=node_mask,
+                state=state, cov_vec=cov_vec)
         elif self.decoder.config.cell_type == 'LSTM':
-            state, c1, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state, c1)
+            state, c1, cov_vec, similarity = self.decoder._step(
+                emb=emb, value=value, value_mask=node_mask,
+                state=state, c1=c1, cov_vec=cov_vec)
         logit = self.projector(state)
         log_prob_sum, t = torch.topk(logit, k=beam_size, dim=-1)           # B x bs
         history.append(t)

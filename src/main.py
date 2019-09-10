@@ -1,15 +1,15 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-07 09:41:09
+@LastEditTime: 2019-09-10 09:11:51
 '''
 
 import os
 import torch
 import numpy as np
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-# from torch.optim.lr_scheduler import StepLR
 from nltk.translate.bleu_score import corpus_bleu
+from nltk.translate.chrf_score import corpus_chrf
 from tensorboardX import SummaryWriter
 
 from vocabulary import build_from_paths
@@ -246,17 +246,19 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
         # predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
         gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
-        gold_snt.extend([g] for g in gold)
+        gold_snt.extend(g for g in gold)
         pred_snt.extend(pred)
         if finish:
             break
 
-    bleu = corpus_bleu(gold_snt, pred_snt)
+    bleu = corpus_bleu([[g] for g in gold_snt], pred_snt)
+    chrf = corpus_chrf(gold_snt, pred_snt)
     with open(os.path.join(config.result_dir, "output.txt"), 'w') as f:
-        lines = ["Corpus bleu score: " + str(bleu) + "\n\n"]
+        lines = ["Corpus bleu score: " + str(bleu) + "\n" +
+                 "Corpus chrf score: " + str(chrf) + "\n\n"]
         assert len(gold_snt) == len(pred_snt)
         for idx in range(len(gold_snt)):
-            lines.append("snt:: " + " ".join(gold_snt[idx][0]) + "\n" +
+            lines.append("snt:: " + " ".join(gold_snt[idx]) + "\n" +
                          "snt_out:: " + " ".join(pred_snt[idx]) + "\n\n")
         f.writelines(lines)
     print("Write output success!")
