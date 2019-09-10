@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-10 09:11:51
+@LastEditTime: 2019-09-10 11:37:06
 '''
 
 import os
@@ -94,11 +94,9 @@ def build_dataiters(args, vocab, edge_vocab):
         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     dev_iter = Iterator(
-        vocab, edge_vocab, 4, args.dev_amr, args.dev_grh, args.dev_snt,
-        args.max_seq_len[0], args.max_seq_len[1])
+        vocab, edge_vocab, 4, args.dev_amr, args.dev_grh, args.dev_snt)
     test_iter = Iterator(
-        vocab, edge_vocab, 4, args.test_amr, args.test_grh, args.test_snt,
-        args.max_seq_len[0], args.max_seq_len[1])
+        vocab, edge_vocab, 4, args.test_amr, args.test_grh, args.test_snt)
     return train_iter, dev_iter, test_iter
 
 
@@ -239,14 +237,14 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     gold_snt = []
     pred_snt = []
     while True:
-        batch_dicts, finish = test_iter.next()
+        batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
         nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
         predictions = model.predict_with_beam_search(
             tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step, config.beam_size)
         # predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
-        gold = id2sentence(tokens[:, 1:], inversed_vocab)
+        # gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
-        gold_snt.extend(g for g in gold)
+        gold_snt.extend(raw_snt)
         pred_snt.extend(pred)
         if finish:
             break

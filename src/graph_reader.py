@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:41
-@LastEditTime: 2019-09-06 08:55:18
+@LastEditTime: 2019-09-10 11:31:18
 '''
 
 import numpy as np
@@ -32,8 +32,11 @@ class IteratorBase:
             ins = Instance(amr_lines[idx], grp_lines[idx], snt_lines[idx])
             ins.index(vocab, edge_vocab)
             ins.set_id(idx)
-            if len(ins.indexed_node) > max_src_len or len(ins.indexed_token) > max_tgt_len:
-                self.depracated_instances.append(ins)
+            if max_src_len is not None and max_tgt_len is not None:
+                if len(ins.indexed_node) > max_src_len or len(ins.indexed_token) > max_tgt_len:
+                    self.depracated_instances.append(ins)
+                else:
+                    self.instances.append(ins)
             else:
                 self.instances.append(ins)
 
@@ -46,22 +49,35 @@ class IteratorBase:
 
 class Iterator(IteratorBase):
     def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path,
-                 max_src_len, max_tgt_len, keep_ratio=None, edge_variation=None):
+                 max_src_len=None, max_tgt_len=None, keep_ratio=None, edge_variation=None):
         super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
         self.edge_variation = edge_variation
 
-    def next(self):
+    def next(self, raw_snt=False):
         if self.cur == 0:
             random.shuffle(self.instances)
         r = min(self.cur + self.batch_size, len(self.instances))
-        batch_dict = self._prepare(self.instances[self.cur: r])
+        batch_instances = self.instances[self.cur: r]
+        batch_dict = self._prepare(batch_instances)
         self.cur = r
+
+        return_content = []
         if self.cur >= len(self.instances):
             self.cur = 0
-            return batch_dict, True
+            return_content = [batch_dict, True]
         else:
-            return batch_dict, False
+            return_content = [batch_dict, False]
+        if raw_snt:
+            sentences = self.get_raw_sen(batch_instances)
+            return_content.append(sentences)
+        return return_content
+
+    def get_raw_sen(self, batch_instances):
+        sentences = []
+        for ins in batch_instances:
+            sentences.append(ins.snt.tokens[1:-1])
+        return sentences
 
     def _prepare(self, batch_instances):
         src_len = 0
