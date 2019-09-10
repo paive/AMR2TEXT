@@ -1,25 +1,25 @@
 '''
 @Author: Neo
 @Date: 2019-09-06 09:05:11
-@LastEditTime: 2019-09-07 12:11:57
+@LastEditTime: 2019-09-09 21:30:48
 '''
 
 import torch
 import torch.nn as nn
 import constants as C
 from attention import MLPAttention
-from attention import BilinearAttention
-# from attention import MultiHeadAttention
+from utils import get_acti_fun
 
 
 class DecoderConfig:
-    def __init__(self, num_token, emb_dim, hid_dim, num_heads, coverage, cell_type):
+    def __init__(self, num_token, emb_dim, hid_dim, num_heads, coverage, cell_type, dropout):
         self.num_token = num_token
         self.emb_dim = emb_dim
         self.hid_dim = hid_dim
         self.num_heads = num_heads
         self.coverage = coverage
         self.cell_type = cell_type
+        self.dropout = dropout
 
     def __str__(self):
         return "\tNum token:".ljust(C.PRINT_SPACE) + str(self.num_token) + "\n" + \
@@ -27,7 +27,8 @@ class DecoderConfig:
                "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
                "\tNum heads:".ljust(C.PRINT_SPACE) + str(self.num_heads) + "\n" + \
                "\tCoverage".ljust(C.PRINT_SPACE) + str(self.coverage) + "\n" + \
-               "\tCell".ljust(C.PRINT_SPACE) + str(self.cell_type) + "\n"
+               "\tCell".ljust(C.PRINT_SPACE) + str(self.cell_type) + "\n" + \
+               "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n"
 
 
 def get_rnn_cell(cell_type, input_size, hidden_size):
@@ -49,14 +50,14 @@ class Decoder(nn.Module):
                                  hidden_size=self.config.hid_dim)
 
         self.attention = MLPAttention(self.config.hid_dim, self.config.coverage)
-        # self.attention = BilinearAttention(self.config.hid_dim, self.config.coverage)
+        self.hidden_dropout = nn.Dropout(self.config.dropout)
+        self.hidden_mlp = nn.Linear(2*self.config.hid_dim, self.config.hid_dim)
+        self.hidden_acti = get_acti_fun('tanh')
         # self.attention = MultiHeadAttention(
         #     self.config.hid_dim, self.config.hid_dim, self.config.hid_dim, h=self.config.num_heads)
 
-    def _step(self, emb, value, value_mask, cov_vec=None, state=None, c1=None):
+    def old_step(self, emb, value, value_mask, state=None, c1=None, cov_vec=None):
         query = state.unsqueeze(1)   # B x 1 x H
-        # value_mask = value_mask.unsqueeze(1).float()
-        # context, attn = self.attention(query, value, value_mask)   # B x 1 x N
         context, attn, cov_vec = self.attention(query, value, value_mask, cov_vec)
         context = context.squeeze(1)
         inp = torch.cat((emb, context), dim=-1)           # B x (GH+DH)
@@ -65,6 +66,23 @@ class Decoder(nn.Module):
             return state, cov_vec, attn
         elif self.config.cell_type == 'LSTM':
             state, c1 = self.cell(inp, (state, c1))
+            return state, c1, cov_vec, attn
+
+    def _step(self, emb, value, value_mask, state=None, c1=None, cov_vec=None):
+        rnn_input = torch.cat((emb, state), dim=-1)
+        if self.config.cell_type == 'GRU':
+            rnn_output = self.cell(rnn_input, state)
+        else:
+            rnn_output, c1 = self.cell(rnn_input, (state, c1))
+        query = rnn_output.unsqueeze(1)
+        context, attn, cov_vec = self.attention(query, value, value_mask, cov_vec)
+        hid_concat = torch.cat((rnn_output, context), dim=-1)
+        hid_concat = self.hidden_dropout(hid_concat)
+        state = self.hidden_mlp(hid_concat)
+        state = self.hidden_acti(state)
+        if self.config.cell_type == 'GRU':
+            return state, cov_vec, attn
+        elif self.config.cell_type == 'LSTM':
             return state, c1, cov_vec, attn
 
     def forward(self, embeddings, value, value_mask, state):
@@ -87,9 +105,13 @@ class Decoder(nn.Module):
         attns = []
         for tid in range(0, length):
             if self.config.cell_type == 'GRU':
-                state, cov_vec, similarity = self._step(embeddings[:, tid], value, value_mask, cov_vec, state)
+                state, cov_vec, similarity = self._step(
+                    emb=embeddings[:, tid], value=value, value_mask=value_mask,
+                    state=state, cov_vec=cov_vec)
             elif self.config.cell_type == 'LSTM':
-                state, c1, cov_vec, similarity = self._step(embeddings[:, tid], value, value_mask, cov_vec, state, c1)
+                state, c1, cov_vec, similarity = self._step(
+                    emb=embeddings[:, tid], value=value, value_mask=value_mask,
+                    state=state, c1=c1, cov_vec=cov_vec)
             outputs.append(state)
             attns.append(similarity)
         outputs = torch.stack(outputs, dim=1)

@@ -1,9 +1,7 @@
 '''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-22 09:26:02
-@LastEditTime: 2019-09-07 12:11:50
-@LastEditors: Please set LastEditors
+@Author: Neo
+@Date: 2019-09-09 16:05:21
+@LastEditTime: 2019-09-09 16:05:21
 '''
 import torch
 import torch.nn as nn

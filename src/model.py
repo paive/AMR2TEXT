@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-07 10:53:44
+@LastEditTime: 2019-09-09 14:28:15
 '''
 
 import torch
@@ -21,11 +21,11 @@ def build_encoder(args):
     config = TransformerGCNConfig(
         input_dim=args.emb_dim + args.pos_emb_dim,
         output_dim=args.hid_dim,
-        num_layers=args.num_layers[0],
+        num_layers=args.encoder_layers,
         num_heads=args.heads[0],
         directions=4,
         activation="gelu",
-        dropout=args.encoder_dropout)
+        dropout=args.model_dropout[0])
     print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
     return encoder
@@ -37,7 +37,8 @@ def build_decoder(args, vocab_size):
                                    hid_dim=args.hid_dim,
                                    num_heads=args.heads[1],
                                    coverage=args.coverage,
-                                   cell_type=args.decoder_cell)
+                                   cell_type=args.decoder_cell,
+                                   dropout=args.model_dropout[1])
     print("RNN decoder config:\n", decoder_config)
     decoder = Decoder(decoder_config)
     return decoder
@@ -196,15 +197,21 @@ class Model(nn.Module):
         state = state.repeat_interleave(beam_size, dim=0)                            # B*bs x H
         if self.decoder.config.coverage:
             cov_vec = cov_vec.repeat_interleave(beam_size, dim=0)
+        else:
+            cov_vec = None
         if self.decoder.config.cell_type == 'LSTM':
             c1 = c1.repeat_interleave(beam_size, dim=0)
 
         for idx in range(max_step-1):
             emb = self.token_embeder(t)                                     # B*bs x E
             if self.decoder.config.cell_type == 'GRU':
-                state, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state)
+                state, cov_vec, similarity = self.decoder._step(
+                    emb=emb, value=value, value_mask=node_mask,
+                    state=state, cov_vec=cov_vec)
             elif self.decoder.config.cell_type == 'LSTM':
-                state, c1, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state, c1)
+                state, c1, cov_vec, similarity = self.decoder._step(
+                    emb=emb, value=value, value_mask=node_mask,
+                    state=state, c1=c1, cov_vec=cov_vec)
             logit = self.projector(state)                           # B*bs x V
             log_prob, t = torch.topk(logit, k=beam_size, dim=-1)      # B*bs x bs
 
@@ -268,9 +275,13 @@ class Model(nn.Module):
         predictions = []
         for idx in range(max_step):
             if self.decoder.config.cell_type == 'GRU':
-                state, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state)
+                state, cov_vec, similarity = self.decoder._step(
+                    emb=emb, value=value, value_mask=node_mask,
+                    state=state, cov_vec=cov_vec)
             elif self.decoder.config.cell_type == 'LSTM':
-                state, c1, cov_vec, similarity = self.decoder._step(emb, value, node_mask, cov_vec, state, c1)
+                state, c1, cov_vec, similarity = self.decoder._step(
+                    emb=emb, value=value, value_mask=node_mask,
+                    state=state, c1=c1, cov_vec=cov_vec)
             logit = self.projector(state)
             t = torch.argmax(logit, dim=-1)
             predictions.append(t)
