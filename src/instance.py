@@ -2,7 +2,7 @@
 @Description: In User Settings Edit
 @Author: your name
 @Date: 2019-08-27 21:08:06
-@LastEditTime: 2019-09-03 21:57:18
+@LastEditTime: 2019-09-12 17:21:32
 @LastEditors: Please set LastEditors
 '''
 import numpy as np
@@ -97,15 +97,13 @@ class Instance:
         self.id = _id
 
 
-def pad_instance(ins, src_len, tgt_len, edge_variation=None):
+def pad_instance(ins, src_len, tgt_len):
     new_ins = deepcopy(ins)
     node_len = len(new_ins.indexed_node)
     pl = src_len - node_len
     new_ins.node_mask = [1] * node_len + [0] * pl
     new_ins.indexed_node.extend([C.PAD_ID] * pl)
     new_ins.graph_pos.extend([0] * pl)
-    if edge_variation is not None:
-        new_ins.adj = edge_variate(new_ins.adj, edge_variation)
     new_adj = np.eye(src_len, src_len) * C.SELF_EDGE_ID
     new_adj[0: node_len, 0:node_len] = new_ins.adj
     new_ins.adj = new_adj
@@ -114,11 +112,3 @@ def pad_instance(ins, src_len, tgt_len, edge_variation=None):
     new_ins.token_mask = [1] * token_len + [0] * pl
     new_ins.indexed_token.extend([C.PAD_ID] * pl)
     return new_ins
-
-
-def edge_variate(adj, prob):
-    transfer = np.random.randint(0, 5, adj.shape)
-    mask = np.random.binomial(1, prob, adj.shape)
-    transfer = transfer * mask
-    new_adj = (adj + transfer) % 4
-    return new_adj

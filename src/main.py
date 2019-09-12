@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-10 11:37:06
+@LastEditTime: 2019-09-12 17:24:55
 '''
 
 import os
@@ -124,9 +124,7 @@ class TrainConfig:
         self.save_dir = args.save_dir
         self.iters = args.iters
         self.check_freq = args.checkpoint_frequency
-        self.optimizer = args.optimizer
         self.lr = args.lr
-        # self.momentum = args.momentum
         self.lr_reduce_factor = args.lr_reduce_factor
         self.lr_num_not_improved = args.lr_num_not_improved
         self.patience = args.patience
@@ -136,7 +134,6 @@ class TrainConfig:
         return "\tSave dir:".ljust(C.PRINT_SPACE) + str(self.save_dir) + "\n" + \
                "\tIters:".ljust(C.PRINT_SPACE) + str(self.iters) + "\n" + \
                "\tCheck frequency:".ljust(C.PRINT_SPACE) + str(self.check_freq) + "\n" + \
-               "\tOptimizer:".ljust(C.PRINT_SPACE) + str(self.optimizer) + "\n" + \
                "\tLearning rate:".ljust(C.PRINT_SPACE) + str(self.lr) + "\n" + \
                "\tWeight decay:".ljust(C.PRINT_SPACE) + str(self.weight_decay) + "\n" + \
                "\tlr reduce factor".ljust(C.PRINT_SPACE) + str(self.lr_reduce_factor) + "\n" + \
@@ -153,10 +150,7 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
         print("Load newest model successfully.")
 
     # optimizer
-    if config.optimizer == 'adam':
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    elif config.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(params=model.parameters(), lr=config.lr, momentum=config.momentum)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_reduce_factor, patience=config.lr_num_not_improved)
     model.train()
     train_loss = []
@@ -262,6 +256,11 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     print("Write output success!")
 
 
+def get_instance_attn(model, vocab, edge_vocab, ins_amr, ins_grh, ins_snt):
+    instance_iter = Iterator(vocab, edge_vocab, 1, ins_amr, ins_grh, ins_snt)
+    pass
+
+
 def main(args, logger, cuda_device):
     logger.info("Load vocab and build data iterators...")
     vocab, edge_vocab = build_vocab(args)
@@ -281,6 +280,8 @@ def main(args, logger, cuda_device):
         print('Test config:\n', test_config)
         inversed_vocab = reverse_vocab(vocab)
         test(test_config, model, train_iter, test_iter, inversed_vocab, cuda_device)
+    elif args.mode == 'attn':
+        logger.info('Attn...')
 
 
 if __name__ == "__main__":

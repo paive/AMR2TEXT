@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:41
-@LastEditTime: 2019-09-10 11:31:18
+@LastEditTime: 2019-09-12 17:21:16
 '''
 
 import numpy as np
@@ -49,10 +49,9 @@ class IteratorBase:
 
 class Iterator(IteratorBase):
     def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path,
-                 max_src_len=None, max_tgt_len=None, keep_ratio=None, edge_variation=None):
+                 max_src_len=None, max_tgt_len=None, keep_ratio=None):
         super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
-        self.edge_variation = edge_variation
 
     def next(self, raw_snt=False):
         if self.cur == 0:
@@ -92,7 +91,7 @@ class Iterator(IteratorBase):
             src_len = max(src_len, len(ins.indexed_node))
             tgt_len = max(tgt_len, len(ins.indexed_token))
         for ins in batch_instances:
-            new_ins = pad_instance(ins, src_len, tgt_len, edge_variation=self.edge_variation)
+            new_ins = pad_instance(ins, src_len, tgt_len)
             tokens.append(new_ins.indexed_token)
             token_mask.append(new_ins.token_mask)
             nodes.append(new_ins.indexed_node)

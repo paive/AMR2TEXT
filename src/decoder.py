@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-06 09:05:11
-@LastEditTime: 2019-09-10 09:08:52
+@LastEditTime: 2019-09-10 14:42:16
 '''
 
 import torch
@@ -13,11 +13,10 @@ from utils import deprecated
 
 
 class DecoderConfig:
-    def __init__(self, num_token, emb_dim, hid_dim, num_heads, coverage, cell_type, dropout):
+    def __init__(self, num_token, emb_dim, hid_dim, coverage, cell_type, dropout):
         self.num_token = num_token
         self.emb_dim = emb_dim
         self.hid_dim = hid_dim
-        self.num_heads = num_heads
         self.coverage = coverage
         self.cell_type = cell_type
         self.dropout = dropout
@@ -26,7 +25,6 @@ class DecoderConfig:
         return "\tNum token:".ljust(C.PRINT_SPACE) + str(self.num_token) + "\n" + \
                "\tEmb dim".ljust(C.PRINT_SPACE) + str(self.emb_dim) + "\n" + \
                "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
-               "\tNum heads:".ljust(C.PRINT_SPACE) + str(self.num_heads) + "\n" + \
                "\tCoverage".ljust(C.PRINT_SPACE) + str(self.coverage) + "\n" + \
                "\tCell".ljust(C.PRINT_SPACE) + str(self.cell_type) + "\n" + \
                "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n"

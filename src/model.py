@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-10 08:23:03
+@LastEditTime: 2019-09-12 17:22:27
 '''
 
 import torch
@@ -22,7 +22,7 @@ def build_encoder(args):
         input_dim=args.emb_dim + args.pos_emb_dim,
         output_dim=args.hid_dim,
         num_layers=args.encoder_layers,
-        num_heads=args.heads[0],
+        num_heads=args.heads,
         directions=4,
         activation="gelu",
         dropout=args.model_dropout[0])
@@ -35,7 +35,6 @@ def build_decoder(args, vocab_size):
     decoder_config = DecoderConfig(num_token=vocab_size,
                                    emb_dim=args.emb_dim,
                                    hid_dim=args.hid_dim,
-                                   num_heads=args.heads[1],
                                    coverage=args.coverage,
                                    cell_type=args.decoder_cell,
                                    dropout=args.model_dropout[1])
