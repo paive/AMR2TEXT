@@ -1,13 +1,13 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:52
-@LastEditTime: 2019-09-09 19:55:25
+@LastEditTime: 2019-09-15 16:57:46
 '''
 
 import torch
 import torch.nn as nn
 
-# from attention import MultiHeadAttention
+from attention import MultiHeadAttention
 from utils import get_acti_fun
 import constants as C
 

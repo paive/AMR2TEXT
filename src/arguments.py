@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:24:08
-@LastEditTime: 2019-09-15 16:07:10
+@LastEditTime: 2019-09-15 16:56:21
 '''
 
 import argparse
@@ -63,7 +63,7 @@ def get_arguments():
     parser.add_argument('--model_dropout', type=multiple_values(2, 0.), default=(0.5, 0.2))
     parser.add_argument('--hid_dim', type=int, default=512)
     parser.add_argument('--encoder_layers', type=int, default=8)
-    parser.add_argument('--heads', type=int, default=16)
+    parser.add_argument('--heads', type=int, default=8)
     parser.add_argument('--decoder_cell', type=str, default='LSTM')
     parser.add_argument('--coverage', type=bool, default=True)
     parser.add_argument('--init_param', type=bool, default=False)

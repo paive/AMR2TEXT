@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-15 16:14:46
+@LastEditTime: 2019-09-15 17:04:07
 '''
 
 import torch
@@ -263,8 +263,16 @@ class Model(nn.Module):
                 bp = torch.gather(cur_poi, index=bp, dim=-1)
             cur_t = torch.gather(cur_his, index=bp, dim=-1)
             abp = bp.unsqueeze(-1)
-            abp = abp.repeat_interleave(cur_attn.size(-1), dim=-1)
-            pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
+            abp = abp.repeat(1, 1, cur_attn.size(-1))
+            try:
+                pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
+            except Exception:
+                print(bp)
+                print(bp.size())
+                print(abp)
+                print(abp.size())
+                print(pred_attns)
+                print(pred_attns.size())
             predictions.insert(0, cur_t)
         predictions = torch.stack(predictions, dim=-1)
         attns = torch.stack(pred_attns, dim=2)

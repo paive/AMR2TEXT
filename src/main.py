@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-15 10:39:37
+@LastEditTime: 2019-09-15 16:19:34
 '''
 
 import os
@@ -304,5 +304,8 @@ if __name__ == "__main__":
     args = get_arguments()
     logger = setup_main_logger(__name__, file_logging=True, console=not args.quiet,
                                path=os.path.join(args.log_dir, C.LOG_NAME))
-    cuda_device = torch.device(0)
+    if args.cuda_device is not None:
+        cuda_device = torch.device(0)
+    else:
+        cuda_device = torch.device('cpu')
     main(args, logger, cuda_device)
