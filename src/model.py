@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-12 17:22:27
+@LastEditTime: 2019-09-15 16:14:46
 '''
 
 import torch
@@ -178,6 +178,7 @@ class Model(nn.Module):
             cov_vec = None
 
         history = []
+        his_attns = []
         back_pointer = []
 
         # for the first token
@@ -193,6 +194,7 @@ class Model(nn.Module):
         logit = self.projector(state)
         log_prob_sum, t = torch.topk(logit, k=beam_size, dim=-1)           # B x bs
         history.append(t)
+        his_attns.append(similarity.unsqueeze(1).repeat(1, beam_size, 1))
         t = t.view(-1)                                                    # B*bs
 
         value = value.repeat_interleave(beam_size, dim=0)                            # B*bs x N x H
@@ -215,6 +217,7 @@ class Model(nn.Module):
                 state, c1, cov_vec, similarity = self.decoder._step(
                     emb=emb, value=value, value_mask=node_mask,
                     state=state, c1=c1, cov_vec=cov_vec)
+            his_attns.append(similarity.view(-1, beam_size, similarity.size(-1)))  # B x bs x N
             logit = self.projector(state)                           # B*bs x V
             log_prob, t = torch.topk(logit, k=beam_size, dim=-1)      # B*bs x bs
 
@@ -248,18 +251,24 @@ class Model(nn.Module):
                 cov_vec = cov_vec.view(-1, cov_vec.size(-1))
 
         predictions = [history[-1]]
+        pred_attns = [his_attns[-1]]
         bp = None
         for i in range(max_step-2, -1, -1):
             cur_poi = back_pointer[i]                # B x bs
             cur_his = history[i]                     # B x bs
+            cur_attn = his_attns[i]                  # B x bs x N
             if bp is None:
                 bp = cur_poi                         # B x bs
             else:
                 bp = torch.gather(cur_poi, index=bp, dim=-1)
             cur_t = torch.gather(cur_his, index=bp, dim=-1)
+            abp = bp.unsqueeze(-1)
+            abp = abp.repeat_interleave(cur_attn.size(-1), dim=-1)
+            pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
             predictions.insert(0, cur_t)
         predictions = torch.stack(predictions, dim=-1)
-        return predictions[:, 0]
+        attns = torch.stack(pred_attns, dim=2)
+        return predictions[:, 0], attns[:, 0]
 
     def predict(self, start_tokens, nlabel, npos, adjs, node_mask, max_step):
         h = self.embedding_graph(nlabel, npos)
@@ -276,6 +285,7 @@ class Model(nn.Module):
             cov_vec = None
 
         predictions = []
+        attns = []
         for idx in range(max_step):
             if self.decoder.config.cell_type == 'GRU':
                 state, cov_vec, similarity = self.decoder._step(
@@ -288,6 +298,8 @@ class Model(nn.Module):
             logit = self.projector(state)
             t = torch.argmax(logit, dim=-1)
             predictions.append(t)
+            attns.append(similarity)
             emb = self.token_embeder(t)
         predictions = torch.stack(predictions, dim=-1)
-        return predictions
+        attns = torch.stack(attns, dim=1)
+        return predictions, attns

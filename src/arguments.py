@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 15:24:08
-@LastEditTime: 2019-09-10 20:37:24
+@LastEditTime: 2019-09-15 16:07:10
 '''
 
 import argparse
@@ -29,7 +29,7 @@ def multiple_values(num_values=0, greater_or_equal=None, data_type=int):
 def get_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cuda_device', type=int, default=0)
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'attn'])
 
     # log
     parser.add_argument('--log_dir', type=str, default='./log')

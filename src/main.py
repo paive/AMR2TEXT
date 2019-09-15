@@ -1,7 +1,7 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-12 17:24:55
+@LastEditTime: 2019-09-15 10:39:37
 '''
 
 import os
@@ -94,9 +94,9 @@ def build_dataiters(args, vocab, edge_vocab):
         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     dev_iter = Iterator(
-        vocab, edge_vocab, 4, args.dev_amr, args.dev_grh, args.dev_snt)
+        vocab, edge_vocab, 3, args.dev_amr, args.dev_grh, args.dev_snt)
     test_iter = Iterator(
-        vocab, edge_vocab, 4, args.test_amr, args.test_grh, args.test_snt)
+        vocab, edge_vocab, 3, args.test_amr, args.test_grh, args.test_snt)
     return train_iter, dev_iter, test_iter
 
 
@@ -233,9 +233,9 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     while True:
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
         nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        predictions = model.predict_with_beam_search(
+        predictions, _ = model.predict_with_beam_search(
             tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step, config.beam_size)
-        # predictions = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
+        # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
         # gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
         gold_snt.extend(raw_snt)
@@ -256,9 +256,20 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     print("Write output success!")
 
 
-def get_instance_attn(model, vocab, edge_vocab, ins_amr, ins_grh, ins_snt):
-    instance_iter = Iterator(vocab, edge_vocab, 1, ins_amr, ins_grh, ins_snt)
-    pass
+def get_instance_attn(model, instance_iter, inversed_vocab, cuda_device):
+    trained_iters, best_iter, best_loss = load_model(model, "./save")
+    batch_dicts, finish = instance_iter.next()
+    nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+    print("nlabel: ", nlabel)
+    print("npos: ", npos)
+    print("adjs: ", adjs)
+    print("node_mask: ", node_mask)
+    predictions, attns = model.predict_with_beam_search(
+            tokens[:, 0], nlabel, npos, adjs, node_mask, 300, 10)
+    # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, 300)
+    print(id2sentence(tokens, inversed_vocab))
+    print(id2sentence(predictions, inversed_vocab))
+    print(torch.max(attns, dim=-1))
 
 
 def main(args, logger, cuda_device):
@@ -272,7 +283,7 @@ def main(args, logger, cuda_device):
         writer = SummaryWriter()
         train_config = TrainConfig(args)
         print('Train config:\n', train_config)
-        train(train_config, model, train_iter, dev_iter, cuda_device, logger, writer)
+        train(train_config, model, train_iter, test_iter, cuda_device, logger, writer)
         writer.close()
     elif args.mode == 'test':
         logger.info('Test...')
@@ -281,7 +292,12 @@ def main(args, logger, cuda_device):
         inversed_vocab = reverse_vocab(vocab)
         test(test_config, model, train_iter, test_iter, inversed_vocab, cuda_device)
     elif args.mode == 'attn':
-        logger.info('Attn...')
+        ins_amr = './data/attn_test/attn.amr'
+        ins_grh = './data/attn_test/attn.grh'
+        ins_snt = './data/attn_test/attn.snt'
+        instance_iter = Iterator(vocab, edge_vocab, 1, ins_amr, ins_grh, ins_snt)
+        inversed_vocab = reverse_vocab(vocab)
+        get_instance_attn(model, instance_iter, inversed_vocab, cuda_device)
 
 
 if __name__ == "__main__":
