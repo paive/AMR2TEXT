@@ -264,15 +264,7 @@ class Model(nn.Module):
             cur_t = torch.gather(cur_his, index=bp, dim=-1)
             abp = bp.unsqueeze(-1)
             abp = abp.repeat(1, 1, cur_attn.size(-1))
-            try:
-                pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
-            except Exception:
-                print(bp)
-                print(bp.size())
-                print(abp)
-                print(abp.size())
-                print(pred_attns)
-                print(pred_attns.size())
+            pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
             predictions.insert(0, cur_t)
         predictions = torch.stack(predictions, dim=-1)
         attns = torch.stack(pred_attns, dim=2)

@@ -278,6 +278,11 @@ def main(args, logger, cuda_device):
     train_iter, dev_iter, test_iter = build_dataiters(args, vocab, edge_vocab)
     model = build_model(args, logger, cuda_device, vocab, edge_vocab)
 
+    num_params = 0
+    for param in model.parameters():
+        num_params += param.numel()
+    logger.info("Model size: {}".format(num_params / 1e6))
+
     if args.mode == 'train':
         logger.info("Training...")
         writer = SummaryWriter()

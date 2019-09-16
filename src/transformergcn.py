@@ -1,13 +1,13 @@
 '''
 @Author: Neo
 @Date: 2019-09-02 19:02:52
-@LastEditTime: 2019-09-15 16:57:46
+@LastEditTime: 2019-09-15 17:20:32
 '''
 
 import torch
 import torch.nn as nn
 
-from attention import MultiHeadAttention
+# from attention import MultiHeadAttention
 from utils import get_acti_fun
 import constants as C
 
@@ -136,6 +136,7 @@ class Block(nn.Module):
             label = j + 1
             mask = (adj == label).float()
             weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
+            # weight = (mask + C.EPSILON/mask.size(-1)) / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)            
             output = torch.matmul(weight, hid)
             # output, _ = self.conv_attn(hid, hid, mask)
             direct_list.append(output)
