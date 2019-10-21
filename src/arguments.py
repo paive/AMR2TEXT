@@ -55,8 +55,8 @@ def get_arguments():
     parser.add_argument('--edge_vocab', type=str, default='./data/edge_vocab.json')
 
     # model
-    parser.add_argument('--emb_dim', type=int, default=360)
-    parser.add_argument('--pos_emb_dim', type=int, default=300)
+    parser.add_argument('--emb_dim', type=int, default=90)
+    # parser.add_argument('--pos_emb_dim', type=int, default=360)
     parser.add_argument('--emb_dropout', type=multiple_values(2, 0), default=(.5, .5))
     parser.add_argument('--scale_grad_by_freq', type=bool, default=True)
     parser.add_argument('--weight_tying', type=bool, default=True)

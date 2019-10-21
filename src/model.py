@@ -10,6 +10,8 @@ from allennlp.nn.util import sequence_cross_entropy_with_logits
 
 from embeder import EmbederConfig
 from embeder import Embeder
+from embeder import PosEmbederConfig
+from embeder import PosEmbeder
 from transformergcn import TransformerGCNConfig
 from transformergcn import get_transfomergcn
 from decoder import DecoderConfig
@@ -19,8 +21,7 @@ import constants as C
 
 def build_encoder(args):
     config = TransformerGCNConfig(
-        input_dim=args.emb_dim + args.pos_emb_dim,
-        output_dim=args.hid_dim,
+        hid_dim=args.hid_dim,
         num_layers=args.encoder_layers,
         num_heads=args.heads,
         directions=4,
@@ -33,7 +34,6 @@ def build_encoder(args):
 
 def build_decoder(args, vocab_size):
     decoder_config = DecoderConfig(num_token=vocab_size,
-                                   emb_dim=args.emb_dim,
                                    hid_dim=args.hid_dim,
                                    coverage=args.coverage,
                                    cell_type=args.decoder_cell,
@@ -43,9 +43,10 @@ def build_decoder(args, vocab_size):
     return decoder
 
 
-def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id, dropout):
+def build_embeder(num_emb, emb_dim, hid_dim, scale_grad_by_freq, pad_id, dropout):
     embeder_config = EmbederConfig(num_emb=num_emb,
                                    emb_dim=emb_dim,
+                                   hid_dim=hid_dim,
                                    padding_idx=pad_id,
                                    scale_grad_by_freq=scale_grad_by_freq,
                                    dropout=dropout)
@@ -54,19 +55,27 @@ def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id, dropout):
     return embeder
 
 
+def build_posembeder(max_seq_len, emb_dim, pad_idx):
+    posembeder_config = PosEmbederConfig(max_seq_len=max_seq_len,
+                                         emb_dim=emb_dim,
+                                         padding_idx=pad_idx)
+    print("PosEmbedder config:\n", posembeder_config)
+    posembeder = PosEmbeder(posembeder_config)
+    return posembeder
+
+
 def build_model(args, logger, cuda_device, vocab, edge_vocab):
     logger.info("Build node embedder...")
     node_embeder = build_embeder(num_emb=len(vocab),
                                  emb_dim=args.emb_dim,
+                                 hid_dim=args.hid_dim,
                                  scale_grad_by_freq=args.scale_grad_by_freq,
                                  pad_id=C.PAD_ID,
                                  dropout=args.emb_dropout[0])
     logger.info("Build pos embedder...")
-    pos_embeder = build_embeder(num_emb=args.max_seq_len[0],
-                                emb_dim=args.pos_emb_dim,
-                                scale_grad_by_freq=args.scale_grad_by_freq,
-                                pad_id=0,
-                                dropout=args.emb_dropout[0])
+    pos_embeder = build_posembeder(max_seq_len=args.max_seq_len[0],
+                                   emb_dim=args.hid_dim,
+                                   pad_idx=0)
 
     logger.info("Build encoder...")
     encoder = build_encoder(args)
@@ -78,6 +87,7 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
     else:
         token_embeder = build_embeder(num_emb=len(vocab),
                                       emb_dim=args.emb_dim,
+                                      hid_dim=args.hid_dim,
                                       scale_grad_by_freq=args.scale_grad_by_freq,
                                       pad_id=C.PAD_ID,
                                       dropout=args.emb_dropout[1])
@@ -129,7 +139,7 @@ class Model(nn.Module):
     def embedding_graph(self, nlabel, npos):
         nembeding = self.node_embeder(nlabel)
         pembeding = self.pos_embeder(npos)
-        h = torch.cat((nembeding, pembeding), dim=-1)
+        h = nembeding + pembeding
         return h
 
     def encode_graph(self, adjs, h, node_mask):

@@ -13,9 +13,8 @@ from utils import deprecated
 
 
 class DecoderConfig:
-    def __init__(self, num_token, emb_dim, hid_dim, coverage, cell_type, dropout):
+    def __init__(self, num_token, hid_dim, coverage, cell_type, dropout):
         self.num_token = num_token
-        self.emb_dim = emb_dim
         self.hid_dim = hid_dim
         self.coverage = coverage
         self.cell_type = cell_type
@@ -23,7 +22,6 @@ class DecoderConfig:
 
     def __str__(self):
         return "\tNum token:".ljust(C.PRINT_SPACE) + str(self.num_token) + "\n" + \
-               "\tEmb dim".ljust(C.PRINT_SPACE) + str(self.emb_dim) + "\n" + \
                "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
                "\tCoverage".ljust(C.PRINT_SPACE) + str(self.coverage) + "\n" + \
                "\tCell".ljust(C.PRINT_SPACE) + str(self.cell_type) + "\n" + \
@@ -45,7 +43,7 @@ class Decoder(nn.Module):
         self.config = config
 
         self.cell = get_rnn_cell(cell_type=self.config.cell_type,
-                                 input_size=self.config.emb_dim + self.config.hid_dim,
+                                 input_size=2 * self.config.hid_dim,
                                  hidden_size=self.config.hid_dim)
 
         self.attention = MLPAttention(self.config.hid_dim, self.config.coverage)

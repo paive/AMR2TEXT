@@ -7,15 +7,13 @@
 import torch
 import torch.nn as nn
 
-# from attention import MultiHeadAttention
 from utils import get_acti_fun
 import constants as C
 
 
 def get_transfomergcn(config):
     gcn = TransformerGCN(
-        input_dim=config.input_dim,
-        output_dim=config.output_dim,
+        hid_dim=config.hid_dim,
         num_layers=config.num_layers,
         num_heads=config.num_heads,
         directions=config.directions,
@@ -26,15 +24,13 @@ def get_transfomergcn(config):
 
 class TransformerGCNConfig:
     def __init__(self,
-                 input_dim: int,
-                 output_dim: int,
+                 hid_dim: int,
                  num_layers: int,
                  num_heads: int,
                  directions: int,
                  activation: str,
                  dropout: float):
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.hid_dim = hid_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.directions = directions
@@ -42,34 +38,29 @@ class TransformerGCNConfig:
         self.dropout = dropout
 
     def __str__(self):
-        return "\tInput dim:".ljust(C.PRINT_SPACE) + str(self.input_dim) + "\n" + \
-               "\tOutput dim".ljust(C.PRINT_SPACE) + str(self.output_dim) + "\n" + \
+        return "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
                "\tNum layers:".ljust(C.PRINT_SPACE) + str(self.num_layers) + "\n" + \
                "\tNum heads:".ljust(C.PRINT_SPACE) + str(self.num_heads) + "\n" + \
+               "\tDirections:".ljust(C.PRINT_SPACE) + str(self.directions) + '\n' + \
                "\tActivation".ljust(C.PRINT_SPACE) + str(self.activation) + "\n" + \
                "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n"
 
 
 class TransformerGCN(nn.Module):
     def __init__(self,
-                 input_dim,
-                 output_dim,
+                 hid_dim,
                  num_layers,
                  num_heads,
                  directions,
                  activation,
                  dropout):
         super(TransformerGCN, self).__init__()
-        self._input_dim = input_dim
-        self._output_dim = output_dim
+        self._hid_dim = hid_dim
         self._num_heads = num_heads
         self._directions = directions
 
-        if self._input_dim != self._output_dim:
-            self.input_fc = nn.Linear(self._input_dim, self._output_dim)
-
         self._layers = nn.ModuleList([
-            Block(output_dim=self._output_dim,
+            Block(hid_dim=self._hid_dim,
                   num_heads=self._num_heads,
                   directions=self._directions,
                   dropout=dropout,
@@ -77,8 +68,6 @@ class TransformerGCN(nn.Module):
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
     def forward(self, adj, h):
-        if self._input_dim != self._output_dim:
-            h = self.input_fc(h)
         layer_list = []
         for i, layer in enumerate(self._layers):
             h = layer(adj=adj, inputs=h)
@@ -91,29 +80,29 @@ class TransformerGCN(nn.Module):
 
 class Block(nn.Module):
     def __init__(self,
-                 output_dim,
+                 hid_dim,
                  num_heads,
                  directions,
                  dropout,
                  activation):
         super(Block, self).__init__()
         self._directions = directions
-        self._output_dim = output_dim
+        self._hid_dim = hid_dim
         self._dropout = dropout
         self._activation = activation
 
         # self.conv_attn = MultiHeadAttention(self._output_dim, self._output_dim, self._output_dim, dropout_p=self._dropout, h=num_heads)
         self.conv_acti = get_acti_fun(self._activation)
-        self.conv_norm = nn.LayerNorm(self._output_dim)
+        self.conv_norm = nn.LayerNorm(self._hid_dim)
 
-        self.fc1 = nn.Linear(self._output_dim, 4 * self._output_dim)
+        self.fc1 = nn.Linear(self._hid_dim, 4 * self._hid_dim)
         self.fc1_acti = get_acti_fun(self._activation)
-        self.fc2 = nn.Linear(4 * self._output_dim, self._output_dim)
+        self.fc2 = nn.Linear(4 * self._hid_dim, self._hid_dim)
         self.fc_dropout = nn.Dropout(self._dropout)
-        self.fc_norm = nn.LayerNorm(self._output_dim)
+        self.fc_norm = nn.LayerNorm(self._hid_dim)
 
         # Direction
-        self.direct_fc = nn.Linear(self._directions * self._output_dim, self._output_dim)
+        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
 
     def forward(self, adj, inputs):
         h = self._convolve(adj, inputs)
@@ -136,7 +125,7 @@ class Block(nn.Module):
             label = j + 1
             mask = (adj == label).float()
             weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-            # weight = (mask + C.EPSILON/mask.size(-1)) / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)            
+            # weight = (mask + C.EPSILON/mask.size(-1)) / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
             output = torch.matmul(weight, hid)
             # output, _ = self.conv_attn(hid, hid, mask)
             direct_list.append(output)
