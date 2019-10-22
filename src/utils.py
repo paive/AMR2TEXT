@@ -1,10 +1,3 @@
-'''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-14 14:34:46
-@LastEditTime: 2019-09-05 15:21:48
-@LastEditors: Please set LastEditors
-'''
 from typing import Iterator
 from copy import deepcopy
 import constants as C

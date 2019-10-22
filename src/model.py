@@ -1,9 +1,3 @@
-'''
-@Author: Neo
-@Date: 2019-09-02 15:23:57
-@LastEditTime: 2019-09-15 17:04:07
-'''
-
 import torch
 import torch.nn as nn
 from allennlp.nn.util import sequence_cross_entropy_with_logits
@@ -26,7 +20,8 @@ def build_encoder(args):
         num_heads=args.heads,
         directions=4,
         activation="gelu",
-        dropout=args.model_dropout[0])
+        dropout=args.model_dropout[0],
+        param_sharing=args.param_sharing)
     print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
     return encoder
@@ -239,7 +234,7 @@ class Model(nn.Module):
             log_prob_sum, pos = torch.topk(tmp_sum, beam_size, dim=-1)        # B x bs
             t = torch.gather(t, dim=-1, index=pos)              # B x bs
 
-            hpos = (pos // beam_size)
+            hpos = torch.div(pos, beam_size)
             history.append(t)
             back_pointer.append(hpos)
             t = t.view(-1)
@@ -260,21 +255,22 @@ class Model(nn.Module):
                 cov_vec = torch.gather(cov_vec, index=cov_vecpos, dim=1)
                 cov_vec = cov_vec.view(-1, cov_vec.size(-1))
 
-        predictions = [history[-1]]
-        pred_attns = [his_attns[-1]]
+        predictions = [history[-1].cpu()]
+        pred_attns = [his_attns[-1].cpu()]
         bp = None
         for i in range(max_step-2, -1, -1):
-            cur_poi = back_pointer[i]                # B x bs
-            cur_his = history[i]                     # B x bs
-            cur_attn = his_attns[i]                  # B x bs x N
+            cur_poi = back_pointer[i].cpu()                # B x bs
+            cur_his = history[i].cpu()                     # B x bs
+            cur_attn = his_attns[i].cpu()                  # B x bs x N
+
             if bp is None:
                 bp = cur_poi                         # B x bs
             else:
                 bp = torch.gather(cur_poi, index=bp, dim=-1)
             cur_t = torch.gather(cur_his, index=bp, dim=-1)
             abp = bp.unsqueeze(-1)
-            abp = abp.repeat(1, 1, cur_attn.size(-1))
-            pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=-1))
+            abp = abp.repeat(1, 1, cur_attn.size(-1))               # B x bs x N
+            pred_attns.insert(0, torch.gather(cur_attn, index=abp, dim=1))
             predictions.insert(0, cur_t)
         predictions = torch.stack(predictions, dim=-1)
         attns = torch.stack(pred_attns, dim=2)
