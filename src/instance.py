@@ -73,11 +73,12 @@ class Sentence:
 
 
 class Instance:
-    def __init__(self, amr, grh, snt):
+    def __init__(self, amr, grh, snt, graph_type='sample'):
         self.amr = AMRGraph(amr, grh)
         self.snt = Sentence(snt)
         self.node_mask = None
         self.token_mask = None
+        self.graph_type = graph_type
 
     def index(self, vocab, edge_vocab):
         self.indexed_token = []
@@ -89,12 +90,23 @@ class Instance:
             self.indexed_node.append(vocab_index_word(vocab, node))
 
         self.graph_pos = self.amr.pos
-        self.adj = np.eye(len(self.indexed_node), len(self.indexed_node), dtype=np.int) * C.SELF_EDGE_ID
-        for (src, dst, et) in self.amr.edges:
-            self.adj[src, dst] = vocab_index_word(edge_vocab, et)
+        if self.graph_type == 'sample':
+            self.adj = self.build_sample_adj(len(self.indexed_node), self.amr.edges, edge_vocab)
+        elif self.graph_type == 'full son':
+            pass
+        # self.adj = np.eye(len(self.indexed_node), len(self.indexed_node), dtype=np.int) * C.SELF_EDGE_ID
+        # for (src, dst, et) in self.amr.edges:
+        #     self.adj[src, dst] = vocab_index_word(edge_vocab, et)
 
     def set_id(self, _id):
         self.id = _id
+
+    def build_sample_adj(self, node_num, edges, edge_vocab):
+        """build simple adjacent matrix with four edge types"""
+        adj = np.eye(node_num, node_num, dtype=np.int) * C.SELF_EDGE_ID
+        for (src, dst, et) in edges:
+            adj[src, dst] = vocab_index_word(edge_vocab, et)
+        return adj
 
 
 def pad_instance(ins, src_len, tgt_len):

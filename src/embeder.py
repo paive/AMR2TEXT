@@ -11,10 +11,9 @@ import torch
 
 
 class EmbederConfig:
-    def __init__(self, num_emb, emb_dim, hid_dim, padding_idx, scale_grad_by_freq, dropout):
+    def __init__(self, num_emb, emb_dim, padding_idx, scale_grad_by_freq, dropout):
         self.num_emb = num_emb
         self.emb_dim = emb_dim
-        self.hid_dim = hid_dim
         self.padding_idx = padding_idx
         self.scale_grad_by_freq = scale_grad_by_freq
         self.dropout = dropout
@@ -22,7 +21,6 @@ class EmbederConfig:
     def __str__(self):
         return "\tNum emb:".ljust(C.PRINT_SPACE) + str(self.num_emb) + "\n" + \
                "\tEmb dim".ljust(C.PRINT_SPACE) + str(self.emb_dim) + "\n" + \
-               "\tHid dim".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
                "\tPad idx:".ljust(C.PRINT_SPACE) + str(self.padding_idx) + "\n" + \
                "\tScale factor".ljust(C.PRINT_SPACE) + str(self.scale_grad_by_freq) + "\n" + \
                "\tDropout:".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n"
@@ -36,14 +34,10 @@ class Embeder(nn.Module):
                                     self.config.emb_dim,
                                     padding_idx=self.config.padding_idx,
                                     scale_grad_by_freq=self.config.scale_grad_by_freq)
-        self.matrix = nn.Parameter(torch.Tensor(self.config.emb_dim, self.config.hid_dim))
-        nn.init.xavier_uniform_(self.matrix)
-
         self.dropout = nn.Dropout(self.config.dropout)
 
     def forward(self, data):
         embedding = self.embeder(data)
-        embedding = torch.matmul(embedding, self.matrix)
         embedding = self.dropout(embedding)
         return embedding
 

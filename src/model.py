@@ -38,10 +38,9 @@ def build_decoder(args, vocab_size):
     return decoder
 
 
-def build_embeder(num_emb, emb_dim, hid_dim, scale_grad_by_freq, pad_id, dropout):
+def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id, dropout):
     embeder_config = EmbederConfig(num_emb=num_emb,
                                    emb_dim=emb_dim,
-                                   hid_dim=hid_dim,
                                    padding_idx=pad_id,
                                    scale_grad_by_freq=scale_grad_by_freq,
                                    dropout=dropout)
@@ -63,14 +62,15 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
     logger.info("Build node embedder...")
     node_embeder = build_embeder(num_emb=len(vocab),
                                  emb_dim=args.emb_dim,
-                                 hid_dim=args.hid_dim,
                                  scale_grad_by_freq=args.scale_grad_by_freq,
                                  pad_id=C.PAD_ID,
                                  dropout=args.emb_dropout[0])
     logger.info("Build pos embedder...")
     pos_embeder = build_posembeder(max_seq_len=args.max_seq_len[0],
-                                   emb_dim=args.hid_dim,
+                                   emb_dim=args.pos_emb_dim,
                                    pad_idx=0)
+
+    emb2hid = nn.Linear(args.emb_dim+args.pos_emb_dim, args.hid_dim)
 
     logger.info("Build encoder...")
     encoder = build_encoder(args)
@@ -93,6 +93,7 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
 
     model = Model(node_embeder=node_embeder,
                   pos_embeder=pos_embeder,
+                  emb2hid=emb2hid,
                   token_embeder=token_embeder,
                   encoder=encoder,
                   decoder=decoder,
@@ -107,6 +108,7 @@ class Model(nn.Module):
     def __init__(self,
                  node_embeder,
                  pos_embeder,
+                 emb2hid,
                  token_embeder,
                  encoder,
                  decoder,
@@ -116,6 +118,7 @@ class Model(nn.Module):
         self.node_embeder = node_embeder
         self.pos_embeder = pos_embeder
         self.token_embeder = token_embeder
+        self.emb2hid = emb2hid
         self.encoder = encoder
         self.decoder = decoder
         self.projector = projector
@@ -134,7 +137,8 @@ class Model(nn.Module):
     def embedding_graph(self, nlabel, npos):
         nembeding = self.node_embeder(nlabel)
         pembeding = self.pos_embeder(npos)
-        h = nembeding + pembeding
+        h = torch.cat((nembeding, pembeding), dim=-1)
+        h = self.emb2hid(h)
         return h
 
     def encode_graph(self, adjs, h, node_mask):

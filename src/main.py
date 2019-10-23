@@ -94,9 +94,9 @@ def build_dataiters(args, vocab, edge_vocab):
         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt,
         args.max_seq_len[0], args.max_seq_len[1])
     dev_iter = Iterator(
-        vocab, edge_vocab, 3, args.dev_amr, args.dev_grh, args.dev_snt)
+        vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_snt)
     test_iter = Iterator(
-        vocab, edge_vocab, 3, args.test_amr, args.test_grh, args.test_snt)
+        vocab, edge_vocab, 5, args.test_amr, args.test_grh, args.test_snt)
     return train_iter, dev_iter, test_iter
 
 

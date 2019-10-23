@@ -122,7 +122,7 @@ class MultiHeadAttention(nn.Module):
         self.key_layer = nn.Linear(key_dim, num_units, bias=False)
         self.value_layer = nn.Linear(key_dim, num_units, bias=False)
 
-    def forward(self, query, keys, mask, cov=None):
+    def forward(self, query, keys, mask):
         Q = self.query_layer(query)
         K = self.key_layer(keys)
         V = self.value_layer(keys)
@@ -130,9 +130,9 @@ class MultiHeadAttention(nn.Module):
         # split each Q, K and V into h different values from dim 2
         # and then merge them back together in dim 0
         chunk_size = int(self._num_units / self._h)
-        Q = torch.cat(Q.split(split_size=chunk_size, dim=2), dim=0)
-        K = torch.cat(K.split(split_size=chunk_size, dim=2), dim=0)
-        V = torch.cat(V.split(split_size=chunk_size, dim=2), dim=0)
+        Q = torch.cat(Q.split(split_size=chunk_size, dim=-1), dim=0)
+        K = torch.cat(K.split(split_size=chunk_size, dim=-1), dim=0)
+        V = torch.cat(V.split(split_size=chunk_size, dim=-1), dim=0)
 
         # calculate QK^T
         attn = torch.matmul(Q, K.transpose(1, 2))

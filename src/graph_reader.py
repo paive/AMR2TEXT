@@ -243,14 +243,41 @@ if __name__ == "__main__":
     dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 200, 200)
     test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200)
 
-    ins = dev_iter.instances[10]
+    # ins = dev_iter.instances[10]
+    # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
+
+    # i = 0
+    # while True:
+    #     print(i)
+    #     i += 1
+    #     data, finish = train_iter.next()
+    #     print(finish)
+    #     if finish:
+    #         break
+
+    # 查看最大的儿子数
+    max_son_sum = 0
+    ins_id = -1
+    for idx, ins in enumerate(train_iter.instances):
+        adj = ins.adj
+        directed_edge = (adj == 1)
+        ins_max_son_sum = np.max(np.sum(directed_edge, axis=1))
+        if max_son_sum < ins_max_son_sum:
+            max_son_sum = ins_max_son_sum
+            ins_id = idx
+    print(max_son_sum)
+    ins = train_iter.instances[ins_id]
     visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
 
-    i = 0
-    while True:
-        print(i)
-        i += 1
-        data, finish = train_iter.next()
-        print(finish)
-        if finish:
-            break
+    # 查看最大的深度
+    # max_depth = 0
+    # ins_id = -1
+    # for idx, ins in enumerate(test_iter.instances):
+    #     pos = ins.graph_pos
+    #     ins_max_depth = np.max(ins.graph_pos)
+    #     if max_depth < ins_max_depth:
+    #         max_depth = ins_max_depth
+    #         ins_id = idx
+    # print(max_depth)
+    # ins = test_iter.instances[ins_id]
+    # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)

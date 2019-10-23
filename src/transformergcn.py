@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from utils import get_acti_fun
+from attention import MultiHeadAttention
 import constants as C
 
 
@@ -63,24 +64,35 @@ class TransformerGCN(nn.Module):
         self._hid_dim = hid_dim
         self._num_heads = num_heads
         self._directions = directions
+        self._activation = activation
+        self._dropout = dropout
 
-        if param_sharing == 'attn':
-            self.conv_dir_fc = nn.ModuleList([nn.Linear(self._hid_dim, self._hid_dim) for i in range(self._directions)])
+        if param_sharing == 'conv':
+            self.conv = GCNConvolution(self._hid_dim, self._num_heads, self._directions, self._dropout, self._activation)
             self._layers = nn.ModuleList([
                 Block(hid_dim=self._hid_dim,
                       num_heads=self._num_heads,
                       directions=self._directions,
-                      dropout=dropout,
-                      activation=activation,
-                      conv_dir_fc=self.conv_dir_fc) for i in range(num_layers)])
+                      dropout=self._dropout,
+                      activation=self._activation,
+                      convolution=self.conv) for i in range(num_layers)])
+        elif param_sharing == 'inter':
+            self.inter = Intermediate(self._hid_dim, self._activation, self._dropout)
+            self._layers = nn.ModuleList([
+                Block(hid_dim=self._hid_dim,
+                      num_heads=self._num_heads,
+                      directions=self._directions,
+                      dropout=self._dropout,
+                      activation=self._activation,
+                      intermediate=self.inter) for i in range(num_layers)])
         else:
             assert param_sharing is None
             self._layers = nn.ModuleList([
                 Block(hid_dim=self._hid_dim,
                       num_heads=self._num_heads,
                       directions=self._directions,
-                      dropout=dropout,
-                      activation=activation) for i in range(num_layers)])
+                      dropout=self._dropout,
+                      activation=self._activation) for i in range(num_layers)])
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
     def forward(self, adj, h):
@@ -94,34 +106,12 @@ class TransformerGCN(nn.Module):
         return output
 
 
-class Block(nn.Module):
-    def __init__(self,
-                 hid_dim,
-                 num_heads,
-                 directions,
-                 dropout,
-                 activation,
-                 conv_dir_fc=None,
-                 direct_fc=None):
-        super(Block, self).__init__()
-        self._directions = directions
+class Intermediate(nn.Module):
+    def __init__(self, hid_dim, activation, dropout):
+        super(Intermediate, self).__init__()
         self._hid_dim = hid_dim
-        self._dropout = dropout
         self._activation = activation
-
-        # self.conv_attn = MultiHeadAttention(self._output_dim, self._output_dim, self._output_dim, dropout_p=self._dropout, h=num_heads)
-        self.conv_acti = get_acti_fun(self._activation)
-        if conv_dir_fc is None:
-            self.conv_dir_fc = nn.ModuleList([nn.Linear(self._hid_dim, self._hid_dim) for i in range(self._directions)])
-        else:
-            self.conv_dir_fc = conv_dir_fc
-        self.conv_norm = nn.LayerNorm(self._hid_dim)
-
-        # Direction
-        if direct_fc is None:
-            self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
-        else:
-            self.direct_fc = direct_fc
+        self._dropout = dropout
 
         self.fc1 = nn.Linear(self._hid_dim, 4 * self._hid_dim)
         self.fc1_acti = get_acti_fun(self._activation)
@@ -129,12 +119,7 @@ class Block(nn.Module):
         self.fc_dropout = nn.Dropout(self._dropout)
         self.fc_norm = nn.LayerNorm(self._hid_dim)
 
-    def forward(self, adj, inputs):
-        h = self._convolve(adj, inputs)
-        h = self._fc(h)
-        return h
-
-    def _fc(self, hid):
+    def forward(self, hid):
         residual = hid
         output = self.fc1(hid)
         output = self.fc1_acti(output)
@@ -143,22 +128,154 @@ class Block(nn.Module):
         output = self.fc_norm(output + residual)
         return output
 
-    def _convolve(self, adj, hid):
+
+class AttentionConvolution(nn.Module):
+    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
+        super(AttentionConvolution, self).__init__()
+        self._num_heads = num_heads
+        self._directions = directions
+        self._hid_dim = hid_dim
+        self._dropout = dropout
+        self._activation = activation
+
+        self.conv_acti = get_acti_fun(self._activation)
+        # self.attenion = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
+        self.conv_norm = nn.LayerNorm(self._hid_dim)
+        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
+
+    def forward(self, adj, hid):
         residual = hid
         direct_list = []
+        # attention_mask = torch.zeros(self._directions, hid.size(0), hid.size(1), device=hid.device)    # 4 x B x N
         for j in range(self._directions):
-            dir_hid = self.conv_dir_fc[j](hid)
             label = j + 1
             mask = (adj == label).float()
             weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-            output = torch.matmul(weight, dir_hid)
+            output = torch.matmul(weight, hid)
+            direct_list.append(output)
+            # weight_mask = torch.sum(weight, dim=-1).ne(0.)          # B x N
+            # attention_mask[j] = weight_mask
+        output = torch.cat(direct_list, dim=-1)
+        output = self.direct_fc(output)
+        output = self.conv_acti(output)
+        # output = torch.stack(direct_list, dim=2)         # B x N x 4 x H
+        # output = output.view(-1, self._directions, self._hid_dim)   # BN x 4 x H
+        # hid = hid.view(-1, self._hid_dim).unsqueeze(1)              # BN x 1 x H
+        # attention_mask = attention_mask.permute(1, 2, 0).view(-1, 1, self._directions)     # BN x 4
+        # output, similarity = self.attenion(hid, output, mask=attention_mask)  # BN x 1 x H
+        # output = output.squeeze(1).view(residual.size(0), -1, self._hid_dim)        # B x N x H
+        # output = self.direct_fc(output)
+        output = output + residual
+        output = self.conv_norm(output)
+        return output
+
+
+class GCNConvolution(nn.Module):
+    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
+        super(GCNConvolution, self).__init__()
+        self._num_heads = num_heads
+        self._directions = directions
+        self._hid_dim = hid_dim
+        self._dropout = dropout
+        self._activation = activation
+
+        self.conv_acti = get_acti_fun(self._activation)
+        self.conv_norm = nn.LayerNorm(self._hid_dim)
+        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
+
+    def forward(self, adj, hid):
+        residual = hid
+        direct_list = []
+        for j in range(self._directions):
+            label = j + 1
+            mask = (adj == label).float()
+            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
+            output = torch.matmul(weight, hid)
             direct_list.append(output)
         output = torch.cat(direct_list, dim=-1)
         output = self.direct_fc(output)
-        output = output + residual
         output = self.conv_acti(output)
+        output = output + residual
         output = self.conv_norm(output)
         return output
+
+
+class GatedConvolution(nn.Module):
+    def __init__(self, hid_dim, directions, dropout, activation):
+        super(GatedConvolution, self).__init__()
+        self._hid_dim = hid_dim
+        self._directions = directions
+        self._dropout = dropout
+        self._activation = activation
+
+        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
+        self.conv_acti = get_acti_fun(self._activation)
+
+        self.ri = nn.Linear(self._hid_dim, self._hid_dim)
+        self.rh = nn.Linear(self._hid_dim, self._hid_dim)
+
+        self.zi = nn.Linear(self._hid_dim, self._hid_dim)
+        self.zh = nn.Linear(self._hid_dim, self._hid_dim)
+
+        self.ni = nn.Linear(self._hid_dim, self._hid_dim)
+        self.nh = nn.Linear(self._hid_dim, self._hid_dim)
+
+        self.dropout = nn.Dropout(dropout)
+        self.conv_norm = nn.LayerNorm(self._hid_dim)
+
+    def forward(self, adj, hid):
+        # residual = hid
+        direct_list = []
+        for j in range(self._directions):
+            label = j + 1
+            mask = (adj == label).float()
+            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
+            output = torch.matmul(weight, hid)
+            direct_list.append(output)
+        output = torch.cat(direct_list, dim=-1)
+        output = self.direct_fc(output)
+        output = self.conv_acti(output)
+
+        r = self.ri(output) + self.rh(hid)
+        r = torch.sigmoid(r)
+
+        z = self.zi(output) + self.zh(hid)
+        z = torch.sigmoid(z)
+
+        n = self.ni(output) + r*self.nh(hid)
+        n = torch.tanh(n)
+
+        output = (1-z)*n + z*hid
+        output = self.dropout(output)
+        output = self.conv_norm(output)
+        return output
+
+
+class Block(nn.Module):
+    def __init__(self,
+                 hid_dim,
+                 num_heads,
+                 directions,
+                 dropout,
+                 activation,
+                 convolution=None,
+                 intermediate=None):
+        super(Block, self).__init__()
+        if convolution is None:
+            self.convolution = GCNConvolution(hid_dim, num_heads, directions, dropout, activation)
+            # self.convolution = GatedConvolution(hid_dim, directions, dropout, activation)
+        else:
+            self.convolution = convolution
+
+        if intermediate is None:
+            self.intermediate = Intermediate(hid_dim, activation, dropout)
+        else:
+            self.intermediate = intermediate
+
+    def forward(self, adj, inputs):
+        h = self.convolution(adj, inputs)
+        h = self.intermediate(h)
+        return h
 
 
 if __name__ == '__main__':
