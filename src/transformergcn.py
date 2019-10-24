@@ -129,47 +129,6 @@ class Intermediate(nn.Module):
         return output
 
 
-class AttentionConvolution(nn.Module):
-    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
-        super(AttentionConvolution, self).__init__()
-        self._num_heads = num_heads
-        self._directions = directions
-        self._hid_dim = hid_dim
-        self._dropout = dropout
-        self._activation = activation
-
-        self.conv_acti = get_acti_fun(self._activation)
-        # self.attenion = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
-        self.conv_norm = nn.LayerNorm(self._hid_dim)
-        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
-
-    def forward(self, adj, hid):
-        residual = hid
-        direct_list = []
-        # attention_mask = torch.zeros(self._directions, hid.size(0), hid.size(1), device=hid.device)    # 4 x B x N
-        for j in range(self._directions):
-            label = j + 1
-            mask = (adj == label).float()
-            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-            output = torch.matmul(weight, hid)
-            direct_list.append(output)
-            # weight_mask = torch.sum(weight, dim=-1).ne(0.)          # B x N
-            # attention_mask[j] = weight_mask
-        output = torch.cat(direct_list, dim=-1)
-        output = self.direct_fc(output)
-        output = self.conv_acti(output)
-        # output = torch.stack(direct_list, dim=2)         # B x N x 4 x H
-        # output = output.view(-1, self._directions, self._hid_dim)   # BN x 4 x H
-        # hid = hid.view(-1, self._hid_dim).unsqueeze(1)              # BN x 1 x H
-        # attention_mask = attention_mask.permute(1, 2, 0).view(-1, 1, self._directions)     # BN x 4
-        # output, similarity = self.attenion(hid, output, mask=attention_mask)  # BN x 1 x H
-        # output = output.squeeze(1).view(residual.size(0), -1, self._hid_dim)        # B x N x H
-        # output = self.direct_fc(output)
-        output = output + residual
-        output = self.conv_norm(output)
-        return output
-
-
 class GCNConvolution(nn.Module):
     def __init__(self, hid_dim, num_heads, directions, dropout, activation):
         super(GCNConvolution, self).__init__()
@@ -196,6 +155,44 @@ class GCNConvolution(nn.Module):
         output = self.direct_fc(output)
         output = self.conv_acti(output)
         output = output + residual
+        output = self.conv_norm(output)
+        return output
+
+
+class AttentionConvolution(nn.Module):
+    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
+        super(AttentionConvolution, self).__init__()
+        self._num_heads = num_heads
+        self._directions = directions
+        self._hid_dim = hid_dim
+        self._dropout = dropout
+        self._activation = activation
+
+        self.conv_acti = get_acti_fun(self._activation)
+        self.directed_attention = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
+        self.reversed_attention = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
+        self.conv_norm = nn.LayerNorm(self._hid_dim)
+
+    def forward(self, adj, hid):
+        residual = hid
+        direct_list = []
+        attention_mask = torch.zeros(self._directions, hid.size(0), hid.size(1), device=hid.device)    # 4 x B x N
+        for j in range(self._directions):
+            label = j + 1
+            mask = (adj == label).float()
+            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
+            output = torch.matmul(weight, hid)
+            direct_list.append(output)
+            weight_mask = torch.sum(weight, dim=-1).ne(0.)          # B x N
+            attention_mask[j] = weight_mask
+        output = torch.stack(direct_list, dim=2)         # B x N x 4 x H
+        output = output.view(-1, self._directions, self._hid_dim)   # BN x 4 x H
+        hid = hid.view(-1, self._hid_dim).unsqueeze(1)              # BN x 1 x H
+        attention_mask = attention_mask.permute(1, 2, 0).view(-1, 1, self._directions)     # BN x 4
+        output, similarity = self.attenion(hid, output, mask=attention_mask)  # BN x 1 x H
+        output = output.squeeze(1).view(residual.size(0), -1, self._hid_dim)        # B x N x H
+        output = output + residual
+        output = self.conv_acti(output)        
         output = self.conv_norm(output)
         return output
 
@@ -242,10 +239,10 @@ class GatedConvolution(nn.Module):
         z = self.zi(output) + self.zh(hid)
         z = torch.sigmoid(z)
 
-        n = self.ni(output) + r*self.nh(hid)
+        n = self.ni(output) + r * self.nh(hid)
         n = torch.tanh(n)
 
-        output = (1-z)*n + z*hid
+        output = (1 - z) * n + z * hid
         output = self.dropout(output)
         output = self.conv_norm(output)
         return output
@@ -263,6 +260,7 @@ class Block(nn.Module):
         super(Block, self).__init__()
         if convolution is None:
             self.convolution = GCNConvolution(hid_dim, num_heads, directions, dropout, activation)
+            # self.convolution = AttentionConvolution(hid_dim, num_heads, directions, dropout, activation)
             # self.convolution = GatedConvolution(hid_dim, directions, dropout, activation)
         else:
             self.convolution = convolution

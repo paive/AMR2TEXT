@@ -13,7 +13,7 @@ import math
 
 
 class IteratorBase:
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio):
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio):
         with open(amr_path, 'r') as f:
             amr_lines = f.readlines()
         with open(grp_path, 'r') as f:
@@ -29,7 +29,7 @@ class IteratorBase:
         self.instances = []
         self.depracated_instances = []
         for idx in range(len(amr_lines)):
-            ins = Instance(amr_lines[idx], grp_lines[idx], snt_lines[idx])
+            ins = Instance(amr_lines[idx], grp_lines[idx], snt_lines[idx], stadia)
             ins.index(vocab, edge_vocab)
             ins.set_id(idx)
             if max_src_len is not None and max_tgt_len is not None:
@@ -48,9 +48,9 @@ class IteratorBase:
 
 
 class Iterator(IteratorBase):
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path,
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia,
                  max_src_len=None, max_tgt_len=None, keep_ratio=None):
-        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
+        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
 
     def next(self, raw_snt=False):
@@ -115,11 +115,12 @@ class BucketIterator(IteratorBase):
                  amr_path,
                  grp_path,
                  snt_path,
+                 stadia,
                  max_src_len,
                  max_tgt_len,
                  bucket_num,
                  requires_replicate=False):
-        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, max_src_len, max_tgt_len)
+        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len)
 
         self.buckets = []
         self.bucket_num = bucket_num
@@ -239,12 +240,9 @@ if __name__ == "__main__":
     # dev_iter = BucketIterator(vocab, edge_vocab, 3, dev_amr, dev_grh, dev_snt, 200, 200, 10, True)
     # test_iter = BucketIterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200, 10, False)
 
-    train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 200, 200, 0.2)
-    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 200, 200)
-    test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200)
-
-    # ins = dev_iter.instances[10]
-    # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
+    train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 2, 200, 200)
+    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 2, 200, 200)
+    test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 2, 200, 200)
 
     # i = 0
     # while True:
@@ -255,19 +253,23 @@ if __name__ == "__main__":
     #     if finish:
     #         break
 
+    # 可视化语义图
+    ins = dev_iter.instances[266]
+    visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab, edge_set=[1,2,3,4])
+
     # 查看最大的儿子数
-    max_son_sum = 0
-    ins_id = -1
-    for idx, ins in enumerate(train_iter.instances):
-        adj = ins.adj
-        directed_edge = (adj == 1)
-        ins_max_son_sum = np.max(np.sum(directed_edge, axis=1))
-        if max_son_sum < ins_max_son_sum:
-            max_son_sum = ins_max_son_sum
-            ins_id = idx
-    print(max_son_sum)
-    ins = train_iter.instances[ins_id]
-    visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
+    # max_son_sum = 0
+    # ins_id = -1
+    # for idx, ins in enumerate(train_iter.instances):
+    #     adj = ins.adj
+    #     directed_edge = (adj == 1)
+    #     ins_max_son_sum = np.max(np.sum(directed_edge, axis=1))
+    #     if max_son_sum < ins_max_son_sum:
+    #         max_son_sum = ins_max_son_sum
+    #         ins_id = idx
+    # print(max_son_sum)
+    # ins = train_iter.instances[ins_id]
+    # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
 
     # 查看最大的深度
     # max_depth = 0

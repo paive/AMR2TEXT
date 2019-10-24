@@ -73,12 +73,12 @@ class Sentence:
 
 
 class Instance:
-    def __init__(self, amr, grh, snt, graph_type='sample'):
+    def __init__(self, amr, grh, snt, stadia=1):
         self.amr = AMRGraph(amr, grh)
         self.snt = Sentence(snt)
         self.node_mask = None
         self.token_mask = None
-        self.graph_type = graph_type
+        self.stadia = stadia
 
     def index(self, vocab, edge_vocab):
         self.indexed_token = []
@@ -90,10 +90,7 @@ class Instance:
             self.indexed_node.append(vocab_index_word(vocab, node))
 
         self.graph_pos = self.amr.pos
-        if self.graph_type == 'sample':
-            self.adj = self.build_sample_adj(len(self.indexed_node), self.amr.edges, edge_vocab)
-        elif self.graph_type == 'full son':
-            pass
+        self.adj = self.build_adj(len(self.indexed_node), self.amr.edges, edge_vocab, self.stadia)
         # self.adj = np.eye(len(self.indexed_node), len(self.indexed_node), dtype=np.int) * C.SELF_EDGE_ID
         # for (src, dst, et) in self.amr.edges:
         #     self.adj[src, dst] = vocab_index_word(edge_vocab, et)
@@ -106,6 +103,35 @@ class Instance:
         adj = np.eye(node_num, node_num, dtype=np.int) * C.SELF_EDGE_ID
         for (src, dst, et) in edges:
             adj[src, dst] = vocab_index_word(edge_vocab, et)
+        return adj
+
+    def build_adj(self, node_num, edges, edge_vocab, stadia):
+        def add_directed_edge(root, son, dis):
+            if dis > stadia:
+                return
+            if visit[root, son] == 1:
+                return
+            visit[root, son] = 1
+            if adj[root, son] == 0:
+                adj[root, son] = C.DIRECTED_EDGE_ID
+            if adj[son, root] == 0:
+                adj[son, root] = C.REVERSE_EDGE_ID
+
+            for idx, gson in enumerate(directed_edge_list[son]):
+                add_directed_edge(son, gson, 1)
+                add_directed_edge(root, gson, dis+1)
+
+        directed_edge_list = [set() for i in range(node_num)]
+        adj = np.eye(node_num, node_num, dtype=np.int) * C.SELF_EDGE_ID
+        for (src, dst, et) in edges:
+            adj[src, dst] = vocab_index_word(edge_vocab, et)
+            if adj[src, dst] == C.DIRECTED_EDGE_ID:
+                directed_edge_list[src].add(dst)
+        visit = np.zeros((node_num, node_num))
+
+        for root in range(node_num):
+            for idx, son in enumerate(directed_edge_list[root]):
+                add_directed_edge(root, son, 1)
         return adj
 
 

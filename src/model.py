@@ -29,6 +29,7 @@ def build_encoder(args):
 
 def build_decoder(args, vocab_size):
     decoder_config = DecoderConfig(num_token=vocab_size,
+                                   emb_dim=args.emb_dim,
                                    hid_dim=args.hid_dim,
                                    coverage=args.coverage,
                                    cell_type=args.decoder_cell,
