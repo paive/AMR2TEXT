@@ -48,7 +48,7 @@ def get_arguments():
     parser.add_argument('--test_snt', type=str, default='./data/test.snt')
     parser.add_argument('--max_seq_len', type=multiple_values(2, 1), default=(200, 200))
     parser.add_argument('--bucket_num', type=multiple_values(2, 1), default=(20, 10))
-    parser.add_argument('--stadia', type=float, default=np.inf)
+    parser.add_argument('--stadia', type=float, default=3)
 
     # vocabulary
     parser.add_argument('--num_words', type=int)
@@ -82,7 +82,7 @@ def get_arguments():
     parser.add_argument('--iters', type=int, default=2000000)
     parser.add_argument('--checkpoint-frequency', type=int, default=1000)
     parser.add_argument('--lr', type=float, default=3e-4)
-    parser.add_argument('--lr_reduce_factor', type=float, default=0.7)
+    parser.add_argument('--lr_reduce_factor', type=float, default=0.8)
     parser.add_argument('--lr_num_not_improved', type=int, default=5)
     parser.add_argument('--patience', type=int, default=15)
     parser.add_argument('--weight_decay', type=float, default=1e-5)

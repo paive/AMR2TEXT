@@ -6,7 +6,7 @@ from graphviz import Digraph
 import math
 
 
-def visualization_graph(_id, nlabels, adj, tokens, inverse_vocab, edge_set=[1,2,3,4]):
+def visualization_graph(_id, nlabels, adj, tokens, inverse_vocab, edge_set=[1, 2, 3, 4]):
     sen = " ".join([vocab_index_to_word(inverse_vocab, t) for t in tokens])
     dot = Digraph(comment=sen)
 

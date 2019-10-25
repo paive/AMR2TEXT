@@ -19,7 +19,7 @@ def build_encoder(args):
         num_layers=args.encoder_layers,
         num_heads=args.heads,
         directions=4,
-        activation="gelu",
+        activation="relu",
         dropout=args.model_dropout[0],
         param_sharing=args.param_sharing)
     print("Dcgcn encoder config:\n", config)

@@ -83,7 +83,7 @@ class PosEmbeder(nn.Module):
                                                    d_hid=self.config.emb_dim,
                                                    padding_idx=self.config.padding_idx),
             padding_idx=self.config.padding_idx,
-            freeze=False)
+            freeze=True)
 
     def forward(self, data):
         embedding = self.embeder(data)
