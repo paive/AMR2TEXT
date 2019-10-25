@@ -137,7 +137,7 @@ class MultiHeadAttention(nn.Module):
         # calculate QK^T
         attn = torch.matmul(Q, K.transpose(1, 2))
         # normalize with sqrt(dk)
-        attn = attn / torch.sqrt(self._key_dim).cuda()
+        attn = attn / torch.sqrt(self._key_dim).to(attn.device)
 
         if mask is not None:
             mask = mask.repeat(self._h, 1, 1)

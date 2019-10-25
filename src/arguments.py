@@ -6,6 +6,7 @@
 
 import argparse
 import constants as C
+import numpy as np
 
 
 def multiple_values(num_values=0, greater_or_equal=None, data_type=int):
@@ -47,6 +48,7 @@ def get_arguments():
     parser.add_argument('--test_snt', type=str, default='./data/test.snt')
     parser.add_argument('--max_seq_len', type=multiple_values(2, 1), default=(200, 200))
     parser.add_argument('--bucket_num', type=multiple_values(2, 1), default=(20, 10))
+    parser.add_argument('--stadia', type=float, default=np.inf)
 
     # vocabulary
     parser.add_argument('--num_words', type=int)
