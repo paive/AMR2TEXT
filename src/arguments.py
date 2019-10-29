@@ -48,7 +48,7 @@ def get_arguments():
     parser.add_argument('--test_snt', type=str, default='./data/test.snt')
     parser.add_argument('--max_seq_len', type=multiple_values(2, 1), default=(200, 200))
     parser.add_argument('--bucket_num', type=multiple_values(2, 1), default=(20, 10))
-    parser.add_argument('--stadia', type=float, default=3)
+    parser.add_argument('--stadia', type=float, default=5)
 
     # vocabulary
     parser.add_argument('--num_words', type=int)

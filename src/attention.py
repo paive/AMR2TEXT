@@ -122,7 +122,7 @@ class MultiHeadAttention(nn.Module):
         self.key_layer = nn.Linear(key_dim, num_units, bias=False)
         self.value_layer = nn.Linear(key_dim, num_units, bias=False)
 
-    def forward(self, query, keys, mask):
+    def forward(self, query, keys, mask, relative_embedding):
         Q = self.query_layer(query)
         K = self.key_layer(keys)
         V = self.value_layer(keys)
@@ -136,6 +136,11 @@ class MultiHeadAttention(nn.Module):
 
         # calculate QK^T
         attn = torch.matmul(Q, K.transpose(1, 2))
+        if relative_embedding is not None:
+            # calculate Q RelPosK^T
+            relative_embedding = relative_embedding.repeat(self._h, 1, 1)
+            attn = attn + relative_embedding
+
         # normalize with sqrt(dk)
         attn = attn / torch.sqrt(self._key_dim).to(attn.device)
 

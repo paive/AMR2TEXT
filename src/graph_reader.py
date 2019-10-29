@@ -25,6 +25,7 @@ class IteratorBase:
         self.batch_size = batch_size
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
+        self.stadia = stadia
 
         self.instances = []
         self.depracated_instances = []
@@ -87,24 +88,27 @@ class Iterator(IteratorBase):
         node_mask = []
         poses = []
         adjs = []
+        relative_pos = []
         for ins in batch_instances:
             src_len = max(src_len, len(ins.indexed_node))
             tgt_len = max(tgt_len, len(ins.indexed_token))
         for ins in batch_instances:
-            new_ins = pad_instance(ins, src_len, tgt_len)
+            new_ins = pad_instance(ins, src_len, tgt_len, self.stadia)
             tokens.append(new_ins.indexed_token)
             token_mask.append(new_ins.token_mask)
             nodes.append(new_ins.indexed_node)
             node_mask.append(new_ins.node_mask)
             poses.append(new_ins.graph_pos)
             adjs.append(new_ins.adj)
+            relative_pos.append(new_ins.relative_pos)
 
         return {"batch_nlabel": nodes,
                 "batch_npos": poses,
                 "batch_adjs": adjs,
                 "node_mask": node_mask,
                 "tokens": tokens,
-                "token_mask": token_mask}
+                "token_mask": token_mask,
+                'relative_pos': relative_pos}
 
 
 class BucketIterator(IteratorBase):
@@ -240,22 +244,25 @@ if __name__ == "__main__":
     # dev_iter = BucketIterator(vocab, edge_vocab, 3, dev_amr, dev_grh, dev_snt, 200, 200, 10, True)
     # test_iter = BucketIterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200, 10, False)
 
-    train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 2, 200, 200)
-    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 2, 200, 200)
-    test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 2, 200, 200)
+    # train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 3, 200, 200)
+    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 3, 200, 200)
+    # test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 3, 200, 200)
 
-    # i = 0
-    # while True:
-    #     print(i)
-    #     i += 1
-    #     data, finish = train_iter.next()
-    #     print(finish)
-    #     if finish:
-    #         break
+    i = 0
+    while True:
+        print(i)
+        i += 1
+        data, finish = dev_iter.next()
+        print(data)
+        break
 
     # 可视化语义图
-    ins = dev_iter.instances[266]
-    visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab, edge_set=[1,2,3,4])
+    # ins = dev_iter.instances[266]
+    # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab, edge_set=[1])
+    # print(ins.graph_pos)
+    # print(ins.adj)
+    # print(ins.relative_pos)
+
 
     # 查看最大的儿子数
     # max_son_sum = 0

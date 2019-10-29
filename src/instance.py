@@ -90,7 +90,7 @@ class Instance:
             self.indexed_node.append(vocab_index_word(vocab, node))
 
         self.graph_pos = self.amr.pos
-        self.adj = self.build_adj(len(self.indexed_node), self.amr.edges, edge_vocab, self.stadia)
+        self.adj, self.relative_pos = self.build_adj(len(self.indexed_node), self.amr.edges, edge_vocab)
         # self.adj = np.eye(len(self.indexed_node), len(self.indexed_node), dtype=np.int) * C.SELF_EDGE_ID
         # for (src, dst, et) in self.amr.edges:
         #     self.adj[src, dst] = vocab_index_word(edge_vocab, et)
@@ -105,17 +105,19 @@ class Instance:
             adj[src, dst] = vocab_index_word(edge_vocab, et)
         return adj
 
-    def build_adj(self, node_num, edges, edge_vocab, stadia):
+    def build_adj(self, node_num, edges, edge_vocab):
         def add_directed_edge(root, son, dis):
-            if dis > stadia:
+            if dis > self.stadia:
                 return
             if visit[root, son] == 1:
                 return
             visit[root, son] = 1
             if adj[root, son] == 0:
                 adj[root, son] = C.DIRECTED_EDGE_ID
+                relative_pos[root, son] = dis
             if adj[son, root] == 0:
                 adj[son, root] = C.REVERSE_EDGE_ID
+                relative_pos[son, root] = -dis
 
             for idx, gson in enumerate(directed_edge_list[son]):
                 add_directed_edge(son, gson, 1)
@@ -123,8 +125,17 @@ class Instance:
 
         directed_edge_list = [set() for i in range(node_num)]
         adj = np.eye(node_num, node_num, dtype=np.int) * C.SELF_EDGE_ID
+        relative_pos = np.ones((node_num, node_num), dtype=np.int) * (self.stadia+1)
+
         for (src, dst, et) in edges:
             adj[src, dst] = vocab_index_word(edge_vocab, et)
+            if adj[src, dst] == C.DIRECTED_EDGE_ID or adj[src, dst] == C.GLOGAL_EDGE_ID:
+                relative_pos[src, dst] = 1
+            elif adj[src, dst] == C.REVERSE_EDGE_ID:
+                relative_pos[src, dst] = -1
+            elif adj[src, dst] == C.SELF_EDGE_ID:
+                relative_pos[src, dst] = 0
+
             if adj[src, dst] == C.DIRECTED_EDGE_ID:
                 directed_edge_list[src].add(dst)
         visit = np.zeros((node_num, node_num))
@@ -132,19 +143,28 @@ class Instance:
         for root in range(node_num):
             for idx, son in enumerate(directed_edge_list[root]):
                 add_directed_edge(root, son, 1)
-        return adj
+        return adj, relative_pos
 
 
-def pad_instance(ins, src_len, tgt_len):
+def pad_instance(ins, src_len, tgt_len, stadia):
     new_ins = deepcopy(ins)
     node_len = len(new_ins.indexed_node)
     pl = src_len - node_len
+
     new_ins.node_mask = [1] * node_len + [0] * pl
     new_ins.indexed_node.extend([C.PAD_ID] * pl)
     new_ins.graph_pos.extend([0] * pl)
+
     new_adj = np.eye(src_len, src_len) * C.SELF_EDGE_ID
     new_adj[0: node_len, 0:node_len] = new_ins.adj
     new_ins.adj = new_adj
+
+    new_relative_pos = np.ones((src_len, src_len), dtype=np.int) * (stadia+1)
+    np.fill_diagonal(new_relative_pos, 0)
+    new_relative_pos[0: node_len, 0: node_len] = new_ins.relative_pos
+    new_relative_pos = new_relative_pos + stadia
+    new_ins.relative_pos = new_relative_pos
+
     token_len = len(new_ins.indexed_token)
     pl = tgt_len - token_len
     new_ins.token_mask = [1] * token_len + [0] * pl

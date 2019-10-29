@@ -104,6 +104,7 @@ def prepare_input_from_dicts(batch_dicts, cuda_device=None):
     nlabel = torch.LongTensor(batch_dicts['batch_nlabel'])
     npos = torch.LongTensor(batch_dicts['batch_npos'])
     adjs = torch.LongTensor(batch_dicts['batch_adjs'])
+    relative_pos = torch.LongTensor(batch_dicts['relative_pos'])
     node_mask = torch.LongTensor(batch_dicts['node_mask'])
 
     tokens = torch.LongTensor(batch_dicts['tokens'])
@@ -113,10 +114,11 @@ def prepare_input_from_dicts(batch_dicts, cuda_device=None):
         nlabel = nlabel.to(cuda_device)
         npos = npos.to(cuda_device)
         adjs = adjs.to(cuda_device)
+        relative_pos = relative_pos.to(cuda_device)
         node_mask = node_mask.to(cuda_device)
         tokens = tokens.to(cuda_device)
         token_mask = token_mask.to(cuda_device)
-    return nlabel, npos, adjs, node_mask, tokens, token_mask
+    return nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask
 
 
 class TrainConfig:
@@ -157,8 +159,8 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
 
     for iter_id in range(trained_iters + 1, config.iters + 1):
         batch_dicts, finish = train_iter.next()
-        nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        loss = model(nlabel, npos, adjs, node_mask, tokens, token_mask)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -196,8 +198,8 @@ def validation(model, dev_iter):
     val_loss = []
     while True:
         batch_dicts, finish = dev_iter.next()
-        nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        loss = model(nlabel, npos, adjs, node_mask, tokens, token_mask)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask)
         val_loss.append(float(loss))
         if finish:
             break
@@ -232,10 +234,10 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
     pred_snt = []
     while True:
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
-        nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
         predictions, _ = model.predict_with_beam_search(
-            tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step, config.beam_size)
-        # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, config.max_step)
+            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step, config.beam_size)
+        # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step)
         # gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
         gold_snt.extend(raw_snt)
@@ -259,14 +261,14 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
 def get_instance_attn(model, instance_iter, inversed_vocab, cuda_device):
     trained_iters, best_iter, best_loss = load_model(model, "./save")
     batch_dicts, finish = instance_iter.next()
-    nlabel, npos, adjs, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
+    nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
     print("nlabel: ", nlabel)
     print("npos: ", npos)
     print("adjs: ", adjs)
     print("node_mask: ", node_mask)
     predictions, attns = model.predict_with_beam_search(
-            tokens[:, 0], nlabel, npos, adjs, node_mask, 300, 10)
-    # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, node_mask, 300)
+            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, 300, 10)
+    # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, 300)
     print(id2sentence(tokens, inversed_vocab))
     print(id2sentence(predictions, inversed_vocab))
     print(torch.max(attns, dim=-1))

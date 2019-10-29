@@ -8,8 +8,9 @@ import torch
 import torch.nn as nn
 
 from utils import get_acti_fun
-from attention import MultiHeadAttention
 import constants as C
+from embeder import RelativePosEmbder
+from graphconvolution import get_graph_convolution
 
 
 def get_transfomergcn(config):
@@ -20,6 +21,7 @@ def get_transfomergcn(config):
         directions=config.directions,
         activation=config.activation,
         dropout=config.dropout,
+        stadia=config.stadia,
         param_sharing=config.param_sharing)
     return gcn
 
@@ -32,6 +34,7 @@ class TransformerGCNConfig:
                  directions: int,
                  activation: str,
                  dropout: float,
+                 stadia: int,
                  param_sharing: str):
         self.hid_dim = hid_dim
         self.num_layers = num_layers
@@ -39,6 +42,7 @@ class TransformerGCNConfig:
         self.directions = directions
         self.activation = activation
         self.dropout = dropout
+        self.stadia = stadia
         self.param_sharing = param_sharing
 
     def __str__(self):
@@ -48,6 +52,7 @@ class TransformerGCNConfig:
                "\tDirections:".ljust(C.PRINT_SPACE) + str(self.directions) + '\n' + \
                "\tActivation".ljust(C.PRINT_SPACE) + str(self.activation) + "\n" + \
                "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n" + \
+               "\tStadia".ljust(C.PRINT_SPACE) + str(self.stadia) + "\n" + \
                "\tParam sharing".ljust(C.PRINT_SPACE) + str(self.param_sharing) + "\n"
 
 
@@ -59,6 +64,7 @@ class TransformerGCN(nn.Module):
                  directions,
                  activation,
                  dropout,
+                 stadia,
                  param_sharing):
         super(TransformerGCN, self).__init__()
         self._hid_dim = hid_dim
@@ -66,15 +72,29 @@ class TransformerGCN(nn.Module):
         self._directions = directions
         self._activation = activation
         self._dropout = dropout
+        self._stadia = stadia
+        self._conv_name = 'AttentionGCNConv'
+
+        self.relative_pos_embder = RelativePosEmbder(stadia=self._stadia)
 
         if param_sharing == 'conv':
-            self.conv = GCNConvolution(self._hid_dim, self._num_heads, self._directions, self._dropout, self._activation)
+            self.conv = get_graph_convolution(
+                conv_name=self._conv_name,
+                hid_dim=self._hid_dim,
+                num_heads=self._num_heads,
+                directions=self._directions,
+                dropout=self._dropout,
+                activation=self._activation,
+                stadia=self._stadia,
+                relative_pos_embder=self.relative_pos_embder)
             self._layers = nn.ModuleList([
                 Block(hid_dim=self._hid_dim,
                       num_heads=self._num_heads,
                       directions=self._directions,
                       dropout=self._dropout,
                       activation=self._activation,
+                      stadia=self._stadia,
+                      conv_name=self._conv_name,
                       convolution=self.conv) for i in range(num_layers)])
         elif param_sharing == 'inter':
             self.inter = Intermediate(self._hid_dim, self._activation, self._dropout)
@@ -84,7 +104,10 @@ class TransformerGCN(nn.Module):
                       directions=self._directions,
                       dropout=self._dropout,
                       activation=self._activation,
-                      intermediate=self.inter) for i in range(num_layers)])
+                      stadia=self._stadia,
+                      conv_name=self._conv_name,
+                      intermediate=self.inter,
+                      relative_pos_embder=self.relative_pos_embder) for i in range(num_layers)])
         else:
             assert param_sharing is None
             self._layers = nn.ModuleList([
@@ -92,13 +115,16 @@ class TransformerGCN(nn.Module):
                       num_heads=self._num_heads,
                       directions=self._directions,
                       dropout=self._dropout,
-                      activation=self._activation) for i in range(num_layers)])
+                      activation=self._activation,
+                      stadia=self._stadia,
+                      conv_name=self._conv_name,
+                      relative_pos_embder=self.relative_pos_embder) for i in range(num_layers)])
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
-    def forward(self, adj, h):
+    def forward(self, adj, relative_pos, h):
         layer_list = []
         for i, layer in enumerate(self._layers):
-            h = layer(adj=adj, inputs=h)
+            h = layer(adj=adj, relative_pos=relative_pos, inputs=h)
             layer_list.append(h)
         output = torch.stack(layer_list, dim=2)
         weight = torch.softmax(self.layer_weight, dim=-1)
@@ -129,127 +155,6 @@ class Intermediate(nn.Module):
         return output
 
 
-class GCNConvolution(nn.Module):
-    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
-        super(GCNConvolution, self).__init__()
-        self._num_heads = num_heads
-        self._directions = directions
-        self._hid_dim = hid_dim
-        self._dropout = dropout
-        self._activation = activation
-
-        self.conv_acti = get_acti_fun(self._activation)
-        self.conv_norm = nn.LayerNorm(self._hid_dim)
-        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
-
-    def forward(self, adj, hid):
-        residual = hid
-        direct_list = []
-        for j in range(self._directions):
-            label = j + 1
-            mask = (adj == label).float()
-            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-            output = torch.matmul(weight, hid)
-            direct_list.append(output)
-        output = torch.cat(direct_list, dim=-1)
-        output = self.direct_fc(output)
-        output = self.conv_acti(output)
-        output = output + residual
-        output = self.conv_norm(output)
-        return output
-
-
-class AttentionConvolution(nn.Module):
-    def __init__(self, hid_dim, num_heads, directions, dropout, activation):
-        super(AttentionConvolution, self).__init__()
-        self._num_heads = num_heads
-        self._directions = directions
-        self._hid_dim = hid_dim
-        self._dropout = dropout
-        self._activation = activation
-
-        self.directed_attention = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
-        self.reversed_attention = MultiHeadAttention(self._hid_dim, self._hid_dim, self._hid_dim, self._dropout, self._num_heads)
-
-        self.direct_fc = nn.Linear(3*self._hid_dim, self._hid_dim)
-        self.conv_acti = get_acti_fun(self._activation)
-        self.conv_norm = nn.LayerNorm(self._hid_dim)
-
-    def forward(self, adj, hid):
-        residual = hid
-        direct_list = [hid]
-
-        mask = (adj == C.DIRECTED_EDGE_ID) + (adj == C.GLOGAL_EDGE_ID)
-        directed_output, similarity = self.directed_attention(hid, hid, mask=mask)
-        # weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-        # directed_output = torch.matmul(weight, hid)
-        direct_list.append(directed_output)
-
-        mask = (adj == C.REVERSE_EDGE_ID)
-        reversed_output, similarity = self.directed_attention(hid, hid, mask=mask)
-        # weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-        # reversed_output = torch.matmul(weight, hid)
-        direct_list.append(reversed_output)
-
-        output = torch.cat(direct_list, dim=-1)
-        output = self.direct_fc(output)
-        output = self.conv_acti(output)
-        output = output + residual
-        output = self.conv_norm(output)
-        return output
-
-
-class GatedConvolution(nn.Module):
-    def __init__(self, hid_dim, directions, dropout, activation):
-        super(GatedConvolution, self).__init__()
-        self._hid_dim = hid_dim
-        self._directions = directions
-        self._dropout = dropout
-        self._activation = activation
-
-        self.direct_fc = nn.Linear(self._directions * self._hid_dim, self._hid_dim)
-        self.conv_acti = get_acti_fun(self._activation)
-
-        self.ri = nn.Linear(self._hid_dim, self._hid_dim)
-        self.rh = nn.Linear(self._hid_dim, self._hid_dim)
-
-        self.zi = nn.Linear(self._hid_dim, self._hid_dim)
-        self.zh = nn.Linear(self._hid_dim, self._hid_dim)
-
-        self.ni = nn.Linear(self._hid_dim, self._hid_dim)
-        self.nh = nn.Linear(self._hid_dim, self._hid_dim)
-
-        self.dropout = nn.Dropout(dropout)
-        self.conv_norm = nn.LayerNorm(self._hid_dim)
-
-    def forward(self, adj, hid):
-        # residual = hid
-        direct_list = []
-        for j in range(self._directions):
-            label = j + 1
-            mask = (adj == label).float()
-            weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-            output = torch.matmul(weight, hid)
-            direct_list.append(output)
-        output = torch.cat(direct_list, dim=-1)
-        output = self.direct_fc(output)
-        output = self.conv_acti(output)
-
-        r = self.ri(output) + self.rh(hid)
-        r = torch.sigmoid(r)
-
-        z = self.zi(output) + self.zh(hid)
-        z = torch.sigmoid(z)
-
-        n = self.ni(output) + r * self.nh(hid)
-        n = torch.tanh(n)
-
-        output = (1 - z) * n + z * hid
-        output = self.dropout(output)
-        output = self.conv_norm(output)
-        return output
-
-
 class Block(nn.Module):
     def __init__(self,
                  hid_dim,
@@ -257,13 +162,22 @@ class Block(nn.Module):
                  directions,
                  dropout,
                  activation,
+                 stadia,
+                 conv_name,
+                 relative_pos_embder=None,
                  convolution=None,
                  intermediate=None):
         super(Block, self).__init__()
         if convolution is None:
-            # self.convolution = GCNConvolution(hid_dim, num_heads, directions, dropout, activation)
-            self.convolution = AttentionConvolution(hid_dim, num_heads, directions, dropout, activation)
-            # self.convolution = GatedConvolution(hid_dim, directions, dropout, activation)
+            self.convolution = get_graph_convolution(
+                conv_name=conv_name,
+                hid_dim=hid_dim,
+                num_heads=num_heads,
+                directions=directions,
+                dropout=dropout,
+                activation=activation,
+                stadia=stadia,
+                relative_pos_embder=relative_pos_embder)
         else:
             self.convolution = convolution
 
@@ -272,8 +186,8 @@ class Block(nn.Module):
         else:
             self.intermediate = intermediate
 
-    def forward(self, adj, inputs):
-        h = self.convolution(adj, inputs)
+    def forward(self, adj, relative_pos, inputs):
+        h = self.convolution(adj, relative_pos, inputs)
         h = self.intermediate(h)
         return h
 

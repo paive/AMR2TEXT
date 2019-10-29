@@ -21,6 +21,7 @@ def build_encoder(args):
         directions=4,
         activation="relu",
         dropout=args.model_dropout[0],
+        stadia=args.stadia,
         param_sharing=args.param_sharing)
     print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
@@ -142,7 +143,7 @@ class Model(nn.Module):
         h = self.emb2hid(h)
         return h
 
-    def encode_graph(self, adjs, h, node_mask):
+    def encode_graph(self, adjs, relative_pos, h, node_mask):
         """Encode graph with an encoder"""
         def get_gnode_value(value, mask):
             """
@@ -153,7 +154,7 @@ class Model(nn.Module):
             idx = torch.sum(mask, dim=-1) - 1
             idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
             return torch.gather(value, dim=1, index=idx).squeeze(1)
-        value = self.encoder(adjs, h)
+        value = self.encoder(adjs, relative_pos, h)
         state = get_gnode_value(value, node_mask)
         return value, state
 
@@ -164,9 +165,9 @@ class Model(nn.Module):
         logits = self.projector(decoder_outputs)
         return logits
 
-    def forward(self, nlabel, npos, adjs, node_mask, tokens, token_mask):
+    def forward(self, nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask):
         h = self.embedding_graph(nlabel, npos)
-        value, state = self.encode_graph(adjs, h, node_mask)
+        value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
         logits = self.decode_tokens(tokens, value, node_mask, state)
 
         targets = tokens[:, 1:].contiguous()
@@ -174,9 +175,9 @@ class Model(nn.Module):
         loss = sequence_cross_entropy_with_logits(logits=logits, targets=targets, weights=weights)
         return loss
 
-    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, node_mask, max_step, beam_size):
+    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, max_step, beam_size):
         h = self.embedding_graph(nlabel, npos)
-        value, state = self.encode_graph(adjs, h, node_mask)
+        value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
 
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
@@ -281,9 +282,9 @@ class Model(nn.Module):
         attns = torch.stack(pred_attns, dim=2)
         return predictions[:, 0], attns[:, 0]
 
-    def predict(self, start_tokens, nlabel, npos, adjs, node_mask, max_step):
+    def predict(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, max_step):
         h = self.embedding_graph(nlabel, npos)
-        value, state = self.encode_graph(adjs, h, node_mask)
+        value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
 
