@@ -7,7 +7,7 @@ from utils import get_acti_fun
 from embeder import RelativePosEmbder
 
 
-def get_graph_convolution(conv_name, hid_dim, num_heads, directions, dropout, activation, stadia, relative_pos_embder):
+def get_graph_convolution(conv_name, hid_dim, num_heads, directions, dropout, activation, stadia, relative_pos_embder=None):
     config = GraphConvolutionConfig(hid_dim, num_heads, directions, dropout, activation, stadia)
     if conv_name == 'GCNConv':
         return GCNConvolution(config)

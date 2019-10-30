@@ -164,7 +164,7 @@ class Block(nn.Module):
                  activation,
                  stadia,
                  conv_name,
-                 relative_pos_embder=None,
+                 relative_pos_embder,
                  convolution=None,
                  intermediate=None):
         super(Block, self).__init__()

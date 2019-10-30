@@ -11,6 +11,7 @@ from transformergcn import get_transfomergcn
 from decoder import DecoderConfig
 from decoder import Decoder
 import constants as C
+from utils import deprecated
 
 
 def build_encoder(args):
@@ -203,7 +204,8 @@ class Model(nn.Module):
                 emb=emb, value=value, value_mask=node_mask,
                 state=state, c1=c1, cov_vec=cov_vec)
         logit = self.projector(state)
-        log_prob_sum, t = torch.topk(logit, k=beam_size, dim=-1)           # B x bs
+        probability = torch.log_softmax(logit, dim=-1)
+        log_prob_sum, t = torch.topk(probability, k=beam_size, dim=-1)           # B x bs
         history.append(t)
         his_attns.append(similarity.unsqueeze(1).repeat(1, beam_size, 1))
         t = t.view(-1)                                                    # B*bs
@@ -230,7 +232,8 @@ class Model(nn.Module):
                     state=state, c1=c1, cov_vec=cov_vec)
             his_attns.append(similarity.view(-1, beam_size, similarity.size(-1)))  # B x bs x N
             logit = self.projector(state)                           # B*bs x V
-            log_prob, t = torch.topk(logit, k=beam_size, dim=-1)      # B*bs x bs
+            probability = torch.log_softmax(logit, dim=-1)
+            log_prob, t = torch.topk(probability, k=beam_size, dim=-1)      # B*bs x bs
 
             log_prob = log_prob.view(-1, beam_size * beam_size)         # B x bs*bs
             t = t.view(-1, beam_size * beam_size)               # B x bs*bs
@@ -282,6 +285,7 @@ class Model(nn.Module):
         attns = torch.stack(pred_attns, dim=2)
         return predictions[:, 0], attns[:, 0]
 
+    @deprecated
     def predict(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, max_step):
         h = self.embedding_graph(nlabel, npos)
         value, state = self.encode_graph(adjs, relative_pos, h, node_mask)

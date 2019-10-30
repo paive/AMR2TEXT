@@ -16,12 +16,13 @@ from vocabulary import build_from_paths
 from vocabulary import vocab_from_json
 from vocabulary import vocab_to_json
 from vocabulary import reverse_vocab
-# from graph_reader import BucketIterator
 from graph_reader import Iterator
 from model import build_model
+from beam import BeamSearch
 from arguments import get_arguments
 from log import setup_main_logger
 from utils import id2sentence
+from utils import vocab_index_word
 import constants as C
 
 
@@ -89,15 +90,13 @@ def build_vocab(args):
 #     return train_iter, dev_iter, test_iter
 
 
-def build_dataiters(args, vocab, edge_vocab):
+def build_train_dataiters(args, vocab, edge_vocab):
     train_iter = Iterator(
         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt, stadia=args.stadia,
         max_src_len=args.max_seq_len[0], max_tgt_len=args.max_seq_len[1])
     dev_iter = Iterator(
         vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_snt, stadia=args.stadia)
-    test_iter = Iterator(
-        vocab, edge_vocab, 3, args.test_amr, args.test_grh, args.test_snt, stadia=args.stadia)
-    return train_iter, dev_iter, test_iter
+    return train_iter, dev_iter
 
 
 def prepare_input_from_dicts(batch_dicts, cuda_device=None):
@@ -221,7 +220,13 @@ class TestConfig:
                "\tBeam size".ljust(C.PRINT_SPACE) + str(self.beam_size) + "\n"
 
 
-def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
+def build_test_dataiters(args, vocab, edge_vocab):
+    test_iter = Iterator(
+        vocab, edge_vocab, 3, args.test_amr, args.test_grh, args.test_snt, stadia=args.stadia)
+    return test_iter
+
+
+def test(config, model, test_iter, vocab, inversed_vocab, cuda_device):
     # load model
     trained_iters, best_iter, best_loss = load_model(model, config.save_dir)
     if best_loss is None:
@@ -232,11 +237,19 @@ def test(config, model, train_iter, test_iter, inversed_vocab, cuda_device):
 
     gold_snt = []
     pred_snt = []
+
+    bos = vocab_index_word(vocab, C.BOS_SYMBOL)
+    eos = vocab_index_word(vocab, C.EOS_SYMBOL)
+    # beam = BeamSearch(
+    #     model=model, bos=bos, eos=eos,
+    #     max_step=config.max_step, beam_size=config.beam_size)
+
     while True:
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
         nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
         predictions, _ = model.predict_with_beam_search(
             tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step, config.beam_size)
+        # predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
         # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step)
         # gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)
@@ -277,7 +290,6 @@ def get_instance_attn(model, instance_iter, inversed_vocab, cuda_device):
 def main(args, logger, cuda_device):
     logger.info("Load vocab and build data iterators...")
     vocab, edge_vocab = build_vocab(args)
-    train_iter, dev_iter, test_iter = build_dataiters(args, vocab, edge_vocab)
     model = build_model(args, logger, cuda_device, vocab, edge_vocab)
 
     num_params = 0
@@ -290,6 +302,7 @@ def main(args, logger, cuda_device):
         writer = SummaryWriter()
         train_config = TrainConfig(args)
         print('Train config:\n', train_config)
+        train_iter, test_iter = build_train_dataiters(args, vocab, edge_vocab)
         train(train_config, model, train_iter, test_iter, cuda_device, logger, writer)
         writer.close()
     elif args.mode == 'test':
@@ -297,7 +310,8 @@ def main(args, logger, cuda_device):
         test_config = TestConfig(args)
         print('Test config:\n', test_config)
         inversed_vocab = reverse_vocab(vocab)
-        test(test_config, model, train_iter, test_iter, inversed_vocab, cuda_device)
+        test_iter = build_test_dataiters(args, vocab, edge_vocab)
+        test(test_config, model, test_iter, vocab, inversed_vocab, cuda_device)
     elif args.mode == 'attn':
         ins_amr = './data/attn_test/attn.amr'
         ins_grh = './data/attn_test/attn.grh'
