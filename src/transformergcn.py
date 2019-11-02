@@ -75,7 +75,7 @@ class TransformerGCN(nn.Module):
         self._stadia = stadia
         self._conv_name = 'AttentionGCNConv'
 
-        self.relative_pos_embder = RelativePosEmbder(stadia=self._stadia)
+        # self.relative_pos_embder = RelativePosEmbder(stadia=self._stadia)
 
         if param_sharing == 'conv':
             self.conv = get_graph_convolution(
@@ -85,8 +85,7 @@ class TransformerGCN(nn.Module):
                 directions=self._directions,
                 dropout=self._dropout,
                 activation=self._activation,
-                stadia=self._stadia,
-                relative_pos_embder=self.relative_pos_embder)
+                stadia=self._stadia)
             self._layers = nn.ModuleList([
                 Block(hid_dim=self._hid_dim,
                       num_heads=self._num_heads,
@@ -106,8 +105,7 @@ class TransformerGCN(nn.Module):
                       activation=self._activation,
                       stadia=self._stadia,
                       conv_name=self._conv_name,
-                      intermediate=self.inter,
-                      relative_pos_embder=self.relative_pos_embder) for i in range(num_layers)])
+                      intermediate=self.inter) for i in range(num_layers)])
         else:
             assert param_sharing is None
             self._layers = nn.ModuleList([
@@ -117,8 +115,7 @@ class TransformerGCN(nn.Module):
                       dropout=self._dropout,
                       activation=self._activation,
                       stadia=self._stadia,
-                      conv_name=self._conv_name,
-                      relative_pos_embder=self.relative_pos_embder) for i in range(num_layers)])
+                      conv_name=self._conv_name) for i in range(num_layers)])
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
     def forward(self, adj, relative_pos, h):
@@ -164,7 +161,7 @@ class Block(nn.Module):
                  activation,
                  stadia,
                  conv_name,
-                 relative_pos_embder,
+                 relative_pos_embder=None,
                  convolution=None,
                  intermediate=None):
         super(Block, self).__init__()

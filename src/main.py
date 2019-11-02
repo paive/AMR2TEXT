@@ -222,7 +222,7 @@ class TestConfig:
 
 def build_test_dataiters(args, vocab, edge_vocab):
     test_iter = Iterator(
-        vocab, edge_vocab, 3, args.test_amr, args.test_grh, args.test_snt, stadia=args.stadia)
+        vocab, edge_vocab, 1, args.test_amr, args.test_grh, args.test_snt, stadia=args.stadia)
     return test_iter
 
 
@@ -240,16 +240,16 @@ def test(config, model, test_iter, vocab, inversed_vocab, cuda_device):
 
     bos = vocab_index_word(vocab, C.BOS_SYMBOL)
     eos = vocab_index_word(vocab, C.EOS_SYMBOL)
-    # beam = BeamSearch(
-    #     model=model, bos=bos, eos=eos,
-    #     max_step=config.max_step, beam_size=config.beam_size)
+    beam = BeamSearch(
+        model=model, bos=bos, eos=eos,
+        max_step=config.max_step, beam_size=config.beam_size)
 
     while True:
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
         nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        predictions, _ = model.predict_with_beam_search(
-            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step, config.beam_size)
-        # predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
+        # predictions, _ = model.predict_with_beam_search(
+        #     tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step, config.beam_size)
+        predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
         # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step)
         # gold = id2sentence(tokens[:, 1:], inversed_vocab)
         pred = id2sentence(predictions, inversed_vocab)

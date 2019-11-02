@@ -138,8 +138,9 @@ class MultiHeadAttention(nn.Module):
         attn = torch.matmul(Q, K.transpose(1, 2))
         if relative_embedding is not None:
             # calculate Q RelPosK^T
+            relative_embedding = torch.sigmoid(relative_embedding)
             relative_embedding = relative_embedding.repeat(self._h, 1, 1)
-            attn = attn + relative_embedding
+            attn = attn * relative_embedding
 
         # normalize with sqrt(dk)
         attn = attn / torch.sqrt(self._key_dim).to(attn.device)

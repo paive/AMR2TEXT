@@ -120,24 +120,43 @@ class AttentionConvolution(nn.Module):
         else:
             self.relative_pos_embder = relative_pos_embder
 
-        self.attention = MultiHeadAttention(
+        self.directed_attention = MultiHeadAttention(
+            query_dim=self.config._hid_dim,
+            key_dim=self.config._hid_dim,
+            num_units=self.config._hid_dim,
+            dropout_p=self.config._dropout,
+            h=self.config._num_heads)
+        self.reversed_attention = MultiHeadAttention(
             query_dim=self.config._hid_dim,
             key_dim=self.config._hid_dim,
             num_units=self.config._hid_dim,
             dropout_p=self.config._dropout,
             h=self.config._num_heads)
 
+        self.direct_fc = nn.Linear(3*self.config._hid_dim, self.config._hid_dim)
         self.conv_acti = get_acti_fun(self.config._activation)
         self.conv_norm = nn.LayerNorm(self.config._hid_dim)
 
     def forward(self, adj, relative_pos, hid):
         residual = hid
+        direct_list = [hid]
 
         relative_embedding = self.relative_pos_embder(relative_pos)     # B x N x N x 1
         relative_embedding = relative_embedding.squeeze(-1)
 
-        mask = adj != 0
-        output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+        mask = (adj == C.DIRECTED_EDGE_ID) + (adj == C.GLOGAL_EDGE_ID)
+        directed_output, similarity = self.directed_attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+        direct_list.append(directed_output)
+
+        mask = (adj == C.REVERSE_EDGE_ID) + (adj == C.GLOGAL_EDGE_ID)
+        reversed_output, similarity = self.directed_attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+        direct_list.append(reversed_output)
+
+        output = torch.cat(direct_list, dim=-1)
+        output = self.direct_fc(output)
+
+        # mask = adj != 0
+        # output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
         output = self.conv_acti(output)
         output = output + residual
         output = self.conv_norm(output)
