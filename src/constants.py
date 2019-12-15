@@ -1,12 +1,3 @@
-'''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-13 22:16:00
-@LastEditTime: 2019-09-03 21:08:00
-@LastEditors: Please set LastEditors
-'''
-
-
 BOS_SYMBOL = "<s>"
 EOS_SYMBOL = "</s>"
 UNK_SYMBOL = "<unk>"

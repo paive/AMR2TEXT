@@ -1,9 +1,3 @@
-'''
-@Author: Neo
-@Date: 2019-09-06 09:05:11
-@LastEditTime: 2019-09-10 14:42:16
-'''
-
 import torch
 import torch.nn as nn
 import constants as C

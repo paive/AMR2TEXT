@@ -1,23 +1,17 @@
-'''
-@Author: Neo
-@Date: 2019-09-02 19:02:41
-@LastEditTime: 2019-09-12 17:21:16
-'''
-
-import numpy as np
 from instance import Instance
 from instance import pad_instance
-from bucket import Bucket
 import random
 import math
 
 
 class IteratorBase:
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio):
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, linear_amr_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio):
         with open(amr_path, 'r') as f:
             amr_lines = f.readlines()
         with open(grp_path, 'r') as f:
             grp_lines = f.readlines()
+        with open(linear_amr_path, 'r') as f:
+            linear_amrs = f.readlines()
         with open(snt_path, 'r') as f:
             snt_lines = f.readlines()
         assert len(amr_lines) == len(grp_lines)
@@ -30,7 +24,7 @@ class IteratorBase:
         self.instances = []
         self.depracated_instances = []
         for idx in range(len(amr_lines)):
-            ins = Instance(amr_lines[idx], grp_lines[idx], snt_lines[idx], stadia)
+            ins = Instance(amr_lines[idx], grp_lines[idx], linear_amrs[idx], snt_lines[idx], stadia)
             ins.index(vocab, edge_vocab)
             ins.set_id(idx)
             if max_src_len is not None and max_tgt_len is not None:
@@ -49,9 +43,9 @@ class IteratorBase:
 
 
 class Iterator(IteratorBase):
-    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia,
+    def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, linear_amr_path, snt_path, stadia,
                  max_src_len=None, max_tgt_len=None, keep_ratio=None):
-        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
+        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, linear_amr_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
 
     def next(self, raw_snt=False):
@@ -81,6 +75,7 @@ class Iterator(IteratorBase):
 
     def _prepare(self, batch_instances):
         src_len = 0
+        linear_amr_len = 0
         tgt_len = 0
         tokens = []
         token_mask = []
@@ -89,11 +84,15 @@ class Iterator(IteratorBase):
         poses = []
         adjs = []
         relative_pos = []
+        linear_amr = []
+        linear_amr_mask = []
+        aligns = []
         for ins in batch_instances:
             src_len = max(src_len, len(ins.indexed_node))
+            linear_amr_len = max(linear_amr_len, len(ins.indexed_linear_amr))
             tgt_len = max(tgt_len, len(ins.indexed_token))
         for ins in batch_instances:
-            new_ins = pad_instance(ins, src_len, tgt_len, self.stadia)
+            new_ins = pad_instance(ins, src_len, linear_amr_len, tgt_len, self.stadia)
             tokens.append(new_ins.indexed_token)
             token_mask.append(new_ins.token_mask)
             nodes.append(new_ins.indexed_node)
@@ -101,6 +100,9 @@ class Iterator(IteratorBase):
             poses.append(new_ins.graph_pos)
             adjs.append(new_ins.adj)
             relative_pos.append(new_ins.relative_pos)
+            linear_amr.append(new_ins.indexed_linear_amr)
+            linear_amr_mask.append(new_ins.linear_amr_mask)
+            aligns.append(new_ins.aligns)
 
         return {"batch_nlabel": nodes,
                 "batch_npos": poses,
@@ -108,109 +110,10 @@ class Iterator(IteratorBase):
                 "node_mask": node_mask,
                 "tokens": tokens,
                 "token_mask": token_mask,
-                'relative_pos': relative_pos}
-
-
-class BucketIterator(IteratorBase):
-    def __init__(self,
-                 vocab,
-                 edge_vocab,
-                 batch_size,
-                 amr_path,
-                 grp_path,
-                 snt_path,
-                 stadia,
-                 max_src_len,
-                 max_tgt_len,
-                 bucket_num,
-                 requires_replicate=False):
-        super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, snt_path, stadia, max_src_len, max_tgt_len)
-
-        self.buckets = []
-        self.bucket_num = bucket_num
-        src_per_len = max_src_len // self.bucket_num
-        tgt_per_len = max_tgt_len // self.bucket_num
-        for idx in range(bucket_num):
-            self.buckets.append(Bucket(
-                src_len=src_per_len * (idx+1),
-                tgt_len=tgt_per_len * (idx+1),
-                batch_size=self.batch_size))
-
-        for ins in self.instances:
-            ins_src_len = len(ins.amr.nodes)
-            ins_tgt_len = len(ins.snt.tokens)
-            in_bucket = False
-            for bucket in self.buckets:
-                if ins_src_len <= bucket.src_len and ins_tgt_len <= bucket.tgt_len:
-                    bucket.append(ins)
-                    in_bucket = True
-                    break
-            assert in_bucket
-
-        if requires_replicate:
-            for bucket in self.buckets:
-                bucket.replicate()
-        self.print_description()
-
-        self.idb = 0
-        while len(self.buckets[self.idb]) == 0:
-            self.idb += 1
-        self.idl = 0
-        self.visitited_buck = np.array([False] * self.bucket_num)
-
-    def __getitem__(self, idx):
-        return self.instances[idx]
-
-    def next(self):
-        self.visitited_buck[self.idb] = True
-        bucket = self.buckets[self.idb]
-
-        r = min(self.idl + self.batch_size, len(bucket))
-        batch_dict = self._prepare(bucket.instances[self.idl: r])
-
-        if r >= len(bucket):
-            self.idb = (self.idb + 1) % self.bucket_num
-            while len(self.buckets[self.idb]) == 0:
-                self.visitited_buck[self.idb] = True
-                self.idb = (self.idb + 1) % self.bucket_num
-            self.idl = 0
-            bucket.shuffle()
-        else:
-            self.idl = r
-
-        if self.visitited_buck.all() and self.idl == 0:
-            self.visitited_buck = ~ self.visitited_buck
-            return batch_dict, True
-        else:
-            return batch_dict, False
-
-    def _prepare(self, batch_instances):
-        tokens = []
-        token_mask = []
-        nodes = []
-        node_mask = []
-        poses = []
-        adjs = []
-        for ins in batch_instances:
-            tokens.append(ins.indexed_token)
-            token_mask.append(ins.token_mask)
-            nodes.append(ins.indexed_node)
-            node_mask.append(ins.node_mask)
-            poses.append(ins.graph_pos)
-            adjs.append(ins.adj)
-
-        return {"batch_nlabel": nodes,
-                "batch_npos": poses,
-                "batch_adjs": adjs,
-                "node_mask": node_mask,
-                "tokens": tokens,
-                "token_mask": token_mask}
-
-    def print_description(self):
-        print("{} buckets, contains {} instances total, {} instances are depracated.".format(
-            len(self.buckets), len(self.instances), len(self.depracated_instances)))
-        for idx, bucket in enumerate(self.buckets):
-            print("\tBucket {} ({}, {}) has {} samples".format(idx, bucket.src_len, bucket.tgt_len, len(bucket)))
+                'relative_pos': relative_pos,
+                'linear_amr': linear_amr,
+                'linear_amr_mask': linear_amr_mask,
+                'aligns': aligns}
 
 
 if __name__ == "__main__":
@@ -224,13 +127,16 @@ if __name__ == "__main__":
     dev_amr = './data/dev.amr'
     dev_snt = './data/dev.snt'
     dev_grh = "./data/dev.grh"
+    dev_linear_amr = './data/dev.linear_amr'
     train_amr = './data/train.amr'
     train_snt = './data/train.snt'
     train_grh = './data/train.grh'
+    train_linear_amr = './data/train.linear_amr'
 
     test_amr = './data/test.amr'
     test_snt = './data/test.snt'
     test_grh = "./data/test.grh"
+    test_linear_amr = './data/test.linear_amr'
 
     # vocab = build_from_paths([train_amr, train_snt, dev_amr, dev_snt], 30000, 2)
     # vocab_to_json(vocab, "./data/new_vocab.json")
@@ -245,7 +151,7 @@ if __name__ == "__main__":
     # test_iter = BucketIterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200, 10, False)
 
     # train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 3, 200, 200)
-    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_snt, 3, 200, 200)
+    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 3, 200, 200)
     # test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 3, 200, 200)
 
     i = 0
@@ -253,7 +159,9 @@ if __name__ == "__main__":
         print(i)
         i += 1
         data, finish = dev_iter.next()
-        print(data)
+        print(data['batch_nlabel'][0])
+        print(data['linear_amr'][0])
+        print(data['aligns'][0])
         break
 
     # 可视化语义图

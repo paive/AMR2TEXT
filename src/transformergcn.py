@@ -1,9 +1,3 @@
-'''
-@Author: Neo
-@Date: 2019-09-02 19:02:52
-@LastEditTime: 2019-09-15 17:20:32
-'''
-
 import torch
 import torch.nn as nn
 
@@ -21,8 +15,7 @@ def get_transfomergcn(config):
         directions=config.directions,
         activation=config.activation,
         dropout=config.dropout,
-        stadia=config.stadia,
-        param_sharing=config.param_sharing)
+        stadia=config.stadia)
     return gcn
 
 
@@ -34,8 +27,7 @@ class TransformerGCNConfig:
                  directions: int,
                  activation: str,
                  dropout: float,
-                 stadia: int,
-                 param_sharing: str):
+                 stadia: int):
         self.hid_dim = hid_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -43,7 +35,6 @@ class TransformerGCNConfig:
         self.activation = activation
         self.dropout = dropout
         self.stadia = stadia
-        self.param_sharing = param_sharing
 
     def __str__(self):
         return "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
@@ -52,8 +43,7 @@ class TransformerGCNConfig:
                "\tDirections:".ljust(C.PRINT_SPACE) + str(self.directions) + '\n' + \
                "\tActivation".ljust(C.PRINT_SPACE) + str(self.activation) + "\n" + \
                "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n" + \
-               "\tStadia".ljust(C.PRINT_SPACE) + str(self.stadia) + "\n" + \
-               "\tParam sharing".ljust(C.PRINT_SPACE) + str(self.param_sharing) + "\n"
+               "\tStadia".ljust(C.PRINT_SPACE) + str(self.stadia) + "\n"
 
 
 class TransformerGCN(nn.Module):
@@ -64,8 +54,7 @@ class TransformerGCN(nn.Module):
                  directions,
                  activation,
                  dropout,
-                 stadia,
-                 param_sharing):
+                 stadia):
         super(TransformerGCN, self).__init__()
         self._hid_dim = hid_dim
         self._num_heads = num_heads
@@ -76,46 +65,14 @@ class TransformerGCN(nn.Module):
         self._conv_name = 'AttentionGCNConv'
 
         # self.relative_pos_embder = RelativePosEmbder(stadia=self._stadia)
-
-        if param_sharing == 'conv':
-            self.conv = get_graph_convolution(
-                conv_name=self._conv_name,
-                hid_dim=self._hid_dim,
-                num_heads=self._num_heads,
-                directions=self._directions,
-                dropout=self._dropout,
-                activation=self._activation,
-                stadia=self._stadia)
-            self._layers = nn.ModuleList([
-                Block(hid_dim=self._hid_dim,
-                      num_heads=self._num_heads,
-                      directions=self._directions,
-                      dropout=self._dropout,
-                      activation=self._activation,
-                      stadia=self._stadia,
-                      conv_name=self._conv_name,
-                      convolution=self.conv) for i in range(num_layers)])
-        elif param_sharing == 'inter':
-            self.inter = Intermediate(self._hid_dim, self._activation, self._dropout)
-            self._layers = nn.ModuleList([
-                Block(hid_dim=self._hid_dim,
-                      num_heads=self._num_heads,
-                      directions=self._directions,
-                      dropout=self._dropout,
-                      activation=self._activation,
-                      stadia=self._stadia,
-                      conv_name=self._conv_name,
-                      intermediate=self.inter) for i in range(num_layers)])
-        else:
-            assert param_sharing is None
-            self._layers = nn.ModuleList([
-                Block(hid_dim=self._hid_dim,
-                      num_heads=self._num_heads,
-                      directions=self._directions,
-                      dropout=self._dropout,
-                      activation=self._activation,
-                      stadia=self._stadia,
-                      conv_name=self._conv_name) for i in range(num_layers)])
+        self._layers = nn.ModuleList([
+            Block(hid_dim=self._hid_dim,
+                  num_heads=self._num_heads,
+                  directions=self._directions,
+                  dropout=self._dropout,
+                  activation=self._activation,
+                  stadia=self._stadia,
+                  conv_name=self._conv_name) for i in range(num_layers)])
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
     def forward(self, adj, relative_pos, h):
@@ -187,34 +144,3 @@ class Block(nn.Module):
         h = self.convolution(adj, relative_pos, inputs)
         h = self.intermediate(h)
         return h
-
-
-if __name__ == '__main__':
-    from embeder import EmbederConfig
-    from embeder import Embeder
-
-    nlabel = torch.LongTensor([[1, 2, 3, 4], [1, 2, 3, 0]])
-    npos = torch.LongTensor([[1, 2, 3, 4], [1, 2, 1, 0]])
-    adj = torch.LongTensor([[[3, 2, 1, 4], [0, 3, 1, 2], [0, 2, 3, 0], [1, 2, 0, 3]],
-                            [[3, 2, 4, 0], [2, 3, 0, 0], [1, 2, 3, 0], [0, 0, 0, 3]]])
-
-    nembedder_config = EmbederConfig(17775, 360, 0, True, 0.5)
-    nembedder = Embeder(nembedder_config)
-
-    pembedder_config = EmbederConfig(200, 300, None, True, 0.5)
-    pembedder = Embeder(pembedder_config)
-
-    config = TransformerGCNConfig(660, 512, 4, 8, 'prelu', 0.1)
-    dcgcn = get_transfomergcn(config)
-
-    optimizer = torch.optim.Adam([{"params": nembedder.parameters()},
-                                  {"params": pembedder.parameters()},
-                                  {"params": dcgcn.parameters()}])
-
-    inputs = torch.cat((nembedder(nlabel), pembedder(npos)), dim=-1)
-    print(adj.size())
-    print(inputs.size())
-    out = dcgcn(adj, inputs)
-    print(out.size())
-    print(out)
-    print(adj)

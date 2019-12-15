@@ -14,18 +14,29 @@ import constants as C
 from utils import deprecated
 
 
-def build_encoder(args):
+def build_gcn_encder(args):
     config = TransformerGCNConfig(
         hid_dim=args.hid_dim,
-        num_layers=args.encoder_layers,
+        num_layers=args.gcn_layers,
         num_heads=args.heads,
         directions=4,
         activation="relu",
         dropout=args.model_dropout[0],
-        stadia=args.stadia,
-        param_sharing=args.param_sharing)
+        stadia=args.stadia)
     print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
+    return encoder
+
+
+def build_encoder(args):
+    if args.encoder_type == 'gcn':
+        encoder = build_gcn_encder(args)
+    elif args.encode_type == 'rnn':
+        raise NotImplementedError
+    elif args.encode_type == 'both':
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
     return encoder
 
 
@@ -166,7 +177,7 @@ class Model(nn.Module):
         logits = self.projector(decoder_outputs)
         return logits
 
-    def forward(self, nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask):
+    def forward(self, nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns):
         h = self.embedding_graph(nlabel, npos)
         value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
         logits = self.decode_tokens(tokens, value, node_mask, state)

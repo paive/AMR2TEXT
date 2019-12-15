@@ -1,15 +1,8 @@
-'''
-@Author: Neo
-@Date: 2019-09-02 19:20:08
-@LastEditTime: 2019-09-15 16:19:34
-'''
-
 import os
 import torch
 import numpy as np
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from nltk.translate.bleu_score import corpus_bleu
-from nltk.translate.chrf_score import corpus_chrf
 from tensorboardX import SummaryWriter
 
 from vocabulary import build_from_paths
@@ -18,7 +11,6 @@ from vocabulary import vocab_to_json
 from vocabulary import reverse_vocab
 from graph_reader import Iterator
 from model import build_model
-from beam import BeamSearch
 from arguments import get_arguments
 from log import setup_main_logger
 from utils import id2sentence
@@ -26,7 +18,10 @@ from utils import vocab_index_word
 import constants as C
 
 
-def save_model(model, model_dir, iter, val_loss=None):
+def save_model(args, model, iter, val_loss=None):
+    model_dir = os.path.join(args.save_dir, args.encoder_type, str(args.stadia))
+    if not os.path.exists(model_dir):
+        os.mkdir(model_dir)
     best_iter_file = os.path.join(model_dir, 'best_iter.txt')
     with open(best_iter_file, "w") as f:
         f.writelines([str(iter)+'\n', str(val_loss)])
@@ -37,13 +32,15 @@ def save_model(model, model_dir, iter, val_loss=None):
     torch.save(model.state_dict(), model_dict_path)
 
 
-def save_trained_iters(model_dir, iters):
+def save_trained_iters(args, iters):
+    model_dir = os.path.join(args.save_dir, args.encoder_type, str(args.stadia))
     trained_iter_file = os.path.join(model_dir, 'trained_iters.txt')
     with open(trained_iter_file, "w") as f:
         f.write(str(iters))
 
 
-def load_model(model, model_dir):
+def load_model(args, model):
+    model_dir = os.path.join(args.save_dir, args.encoder_type, str(args.stadia))
     trained_iters = 0
     trained_iters_file = os.path.join(model_dir, 'trained_iters.txt')
     if os.path.exists(trained_iters_file):
@@ -71,31 +68,19 @@ def build_vocab(args):
     if os.path.exists(args.vocab):
         vocab = vocab_from_json(args.vocab)
     else:
-        vocab = build_from_paths([args.train_amr, args.train_snt, args.dev_amr, args.dev_snt],
+        vocab = build_from_paths([args.train_amr, args.train_snt, args.train_linear_amr, args.dev_amr, args.dev_snt, args.dev_linear_amr],
                                  args.num_words, args.min_count)
         vocab_to_json(vocab, args.vocab)
     edge_vocab = vocab_from_json(args.edge_vocab)
     return vocab, edge_vocab
 
-# def build_dataiters(args, vocab, edge_vocab):
-#     train_iter = BucketIterator(
-#         vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt,
-#         args.max_seq_len[0], args.max_seq_len[1], args.bucket_num[0], True)
-#     dev_iter = BucketIterator(
-#         vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_snt,
-#         args.max_seq_len[0], args.max_seq_len[1], args.bucket_num[1], False)
-#     test_iter = BucketIterator(
-#         vocab, edge_vocab, args.batch_size, args.test_amr, args.test_grh, args.test_snt,
-#         args.max_seq_len[0], args.max_seq_len[1], args.bucket_num[1], False)
-#     return train_iter, dev_iter, test_iter
-
 
 def build_train_dataiters(args, vocab, edge_vocab):
     train_iter = Iterator(
-        vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_snt, stadia=args.stadia,
+        vocab, edge_vocab, args.batch_size, args.train_amr, args.train_grh, args.train_linear_amr, args.train_snt, stadia=args.stadia,
         max_src_len=args.max_seq_len[0], max_tgt_len=args.max_seq_len[1])
     dev_iter = Iterator(
-        vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_snt, stadia=args.stadia)
+        vocab, edge_vocab, args.batch_size, args.dev_amr, args.dev_grh, args.dev_linear_amr, args.dev_snt, stadia=args.stadia)
     return train_iter, dev_iter
 
 
@@ -105,6 +90,10 @@ def prepare_input_from_dicts(batch_dicts, cuda_device=None):
     adjs = torch.LongTensor(batch_dicts['batch_adjs'])
     relative_pos = torch.LongTensor(batch_dicts['relative_pos'])
     node_mask = torch.LongTensor(batch_dicts['node_mask'])
+
+    linear_amr = torch.LongTensor(batch_dicts['linear_amr'])
+    linear_amr_mask = torch.LongTensor(batch_dicts['linear_amr_mask'])
+    aligns = torch.LongTensor(batch_dicts['aligns'])
 
     tokens = torch.LongTensor(batch_dicts['tokens'])
     token_mask = torch.LongTensor(batch_dicts['token_mask'])
@@ -117,7 +106,7 @@ def prepare_input_from_dicts(batch_dicts, cuda_device=None):
         node_mask = node_mask.to(cuda_device)
         tokens = tokens.to(cuda_device)
         token_mask = token_mask.to(cuda_device)
-    return nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask
+    return nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns
 
 
 class TrainConfig:
@@ -142,11 +131,12 @@ class TrainConfig:
                "\tPatience".ljust(C.PRINT_SPACE) + str(self.patience) + "\n"
 
 
-def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
+def train(args, config, model, train_iter, dev_iter, cuda_device, logger, writer):
     # load model
-    trained_iters, best_iter, best_loss = load_model(model, config.save_dir)
+    trained_iters, best_iter, best_loss = load_model(args, model)
     if best_loss is None:
-        print("None model exists in {}, load failure.".format(config.save_dir))
+        print("None model exists in {}, load failure.".format(
+            os.path.join(args.save_dir, args.encoder_type, str(args.stadia))))
     else:
         print("Load newest model successfully.")
 
@@ -158,8 +148,8 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
 
     for iter_id in range(trained_iters + 1, config.iters + 1):
         batch_dicts, finish = train_iter.next()
-        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns = prepare_input_from_dicts(batch_dicts, cuda_device)
+        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -181,9 +171,9 @@ def train(config, model, train_iter, dev_iter, cuda_device, logger, writer):
             # save model
             if (best_loss is None) or (val_loss < best_loss):
                 best_loss = val_loss
-                save_model(model, config.save_dir, iter_id, best_loss)
+                save_model(args, model, iter_id, best_loss)
                 best_iter = iter_id
-            save_trained_iters(config.save_dir, iter_id)
+            save_trained_iters(args, iter_id)
             scheduler.step(val_loss)
             print(f"Learning rate changes to {scheduler.optimizer.param_groups[0]['lr']}")
 
@@ -197,8 +187,8 @@ def validation(model, dev_iter):
     val_loss = []
     while True:
         batch_dicts, finish = dev_iter.next()
-        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns = prepare_input_from_dicts(batch_dicts, cuda_device)
+        loss = model(nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns)
         val_loss.append(float(loss))
         if finish:
             break
@@ -206,31 +196,18 @@ def validation(model, dev_iter):
     return np.mean(val_loss)
 
 
-class TestConfig:
-    def __init__(self, args):
-        self.max_step = args.max_seq_len[1]
-        self.save_dir = args.save_dir
-        self.result_dir = args.result_dir
-        self.beam_size = args.beam_size
-
-    def __str__(self):
-        return "\tSave dir:".ljust(C.PRINT_SPACE) + str(self.save_dir) + "\n" + \
-               "\tResult dir:".ljust(C.PRINT_SPACE) + str(self.result_dir) + "\n" + \
-               "\tMax step".ljust(C.PRINT_SPACE) + str(self.max_step) + "\n" + \
-               "\tBeam size".ljust(C.PRINT_SPACE) + str(self.beam_size) + "\n"
-
-
 def build_test_dataiters(args, vocab, edge_vocab):
     test_iter = Iterator(
-        vocab, edge_vocab, 1, args.test_amr, args.test_grh, args.test_snt, stadia=args.stadia)
+        vocab, edge_vocab, 64, args.test_amr, args.test_grh, args.test_linear_amr, args.test_snt, stadia=args.stadia)
     return test_iter
 
 
-def test(config, model, test_iter, vocab, inversed_vocab, cuda_device):
+def test(args, model, test_iter, vocab, inversed_vocab, cuda_device):
     # load model
-    trained_iters, best_iter, best_loss = load_model(model, config.save_dir)
+    trained_iters, best_iter, best_loss = load_model(args, model)
     if best_loss is None:
-        print("None model exists in {}, load failure.".format(config.save_dir))
+        print("None model exists in {}, load failure.".format(
+            os.path.join(args.save_dir, args.encoder_type, str(args.stadia))))
     else:
         print("Load newest model successfully.")
     model.eval()
@@ -238,53 +215,33 @@ def test(config, model, test_iter, vocab, inversed_vocab, cuda_device):
     gold_snt = []
     pred_snt = []
 
-    bos = vocab_index_word(vocab, C.BOS_SYMBOL)
-    eos = vocab_index_word(vocab, C.EOS_SYMBOL)
-    beam = BeamSearch(
-        model=model, bos=bos, eos=eos,
-        max_step=config.max_step, beam_size=config.beam_size)
+    # bos = vocab_index_word(vocab, C.BOS_SYMBOL)
+    # eos = vocab_index_word(vocab, C.EOS_SYMBOL)
+    # beam = BeamSearch(
+    #     model=model, bos=bos, eos=eos,
+    #     max_step=config.max_step, beam_size=config.beam_size)
 
     while True:
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
-        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-        # predictions, _ = model.predict_with_beam_search(
-        #     tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step, config.beam_size)
-        predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
-        # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, config.max_step)
-        # gold = id2sentence(tokens[:, 1:], inversed_vocab)
+        nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns = prepare_input_from_dicts(batch_dicts, cuda_device)
+        predictions, _ = model.predict_with_beam_search(
+            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, args.max_step, args.beam_size)
+        # predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
         pred = id2sentence(predictions, inversed_vocab)
         gold_snt.extend(raw_snt)
         pred_snt.extend(pred)
         if finish:
             break
-
+    result_dir = os.path.join(args.result_dir, args.encoder_type, str(args.stadia))
     bleu = corpus_bleu([[g] for g in gold_snt], pred_snt)
-    chrf = corpus_chrf(gold_snt, pred_snt)
-    with open(os.path.join(config.result_dir, "output.txt"), 'w') as f:
-        lines = ["Corpus bleu score: " + str(bleu) + "\n" +
-                 "Corpus chrf score: " + str(chrf) + "\n\n"]
+    with open(os.path.join(result_dir, "output.txt"), 'w') as f:
+        lines = ["Corpus bleu score: " + str(bleu) + "\n\n"]
         assert len(gold_snt) == len(pred_snt)
         for idx in range(len(gold_snt)):
             lines.append("snt:: " + " ".join(gold_snt[idx]) + "\n" +
                          "snt_out:: " + " ".join(pred_snt[idx]) + "\n\n")
         f.writelines(lines)
     print("Write output success!")
-
-
-def get_instance_attn(model, instance_iter, inversed_vocab, cuda_device):
-    trained_iters, best_iter, best_loss = load_model(model, "./save")
-    batch_dicts, finish = instance_iter.next()
-    nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask = prepare_input_from_dicts(batch_dicts, cuda_device)
-    print("nlabel: ", nlabel)
-    print("npos: ", npos)
-    print("adjs: ", adjs)
-    print("node_mask: ", node_mask)
-    predictions, attns = model.predict_with_beam_search(
-            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, 300, 10)
-    # predictions, attns = model.predict(tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, 300)
-    print(id2sentence(tokens, inversed_vocab))
-    print(id2sentence(predictions, inversed_vocab))
-    print(torch.max(attns, dim=-1))
 
 
 def main(args, logger, cuda_device):
@@ -303,22 +260,14 @@ def main(args, logger, cuda_device):
         train_config = TrainConfig(args)
         print('Train config:\n', train_config)
         train_iter, test_iter = build_train_dataiters(args, vocab, edge_vocab)
-        train(train_config, model, train_iter, test_iter, cuda_device, logger, writer)
+        train(args, train_config, model, train_iter, test_iter, cuda_device, logger, writer)
         writer.close()
     elif args.mode == 'test':
         logger.info('Test...')
-        test_config = TestConfig(args)
-        print('Test config:\n', test_config)
         inversed_vocab = reverse_vocab(vocab)
         test_iter = build_test_dataiters(args, vocab, edge_vocab)
-        test(test_config, model, test_iter, vocab, inversed_vocab, cuda_device)
-    elif args.mode == 'attn':
-        ins_amr = './data/attn_test/attn.amr'
-        ins_grh = './data/attn_test/attn.grh'
-        ins_snt = './data/attn_test/attn.snt'
-        instance_iter = Iterator(vocab, edge_vocab, 1, ins_amr, ins_grh, ins_snt)
-        inversed_vocab = reverse_vocab(vocab)
-        get_instance_attn(model, instance_iter, inversed_vocab, cuda_device)
+        with torch.no_grad():
+            test(args, model, test_iter, vocab, inversed_vocab, cuda_device)
 
 
 if __name__ == "__main__":

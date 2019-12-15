@@ -1,10 +1,3 @@
-'''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-27 21:08:06
-@LastEditTime: 2019-09-12 17:21:32
-@LastEditors: Please set LastEditors
-'''
 import numpy as np
 from queue import Queue
 from copy import deepcopy
@@ -65,6 +58,11 @@ class AMRGraph:
         return shortest_length.tolist()
 
 
+class LinearAMR:
+    def __init__(self, linear_amr):
+        self.tokens = linear_amr.strip().split()    
+
+
 class Sentence:
     def __init__(self, snt):
         self.tokens = snt.strip().split()
@@ -73,11 +71,14 @@ class Sentence:
 
 
 class Instance:
-    def __init__(self, amr, grh, snt, stadia=1):
+    def __init__(self, amr, grh, linear_amr, snt, stadia=1):
         self.amr = AMRGraph(amr, grh)
         self.snt = Sentence(snt)
+        self.linear_amr = LinearAMR(linear_amr)
+        self.aligns = None
         self.node_mask = None
         self.token_mask = None
+        self.linear_amr_mask = None
         self.stadia = stadia
 
     def index(self, vocab, edge_vocab):
@@ -89,11 +90,29 @@ class Instance:
         for node in self.amr.nodes:
             self.indexed_node.append(vocab_index_word(vocab, node))
 
+        self.indexed_linear_amr = []
+        for token in self.linear_amr.tokens:
+            self.indexed_linear_amr.append(vocab_index_word(vocab, token))
+
         self.graph_pos = self.amr.pos
         self.adj, self.relative_pos = self.build_adj(len(self.indexed_node), self.amr.edges, edge_vocab)
+        self.aligns = self.build_node_aligns(self.amr.nodes, self.linear_amr.tokens)
         # self.adj = np.eye(len(self.indexed_node), len(self.indexed_node), dtype=np.int) * C.SELF_EDGE_ID
         # for (src, dst, et) in self.amr.edges:
         #     self.adj[src, dst] = vocab_index_word(edge_vocab, et)
+
+    def build_node_aligns(self, nodes, linear_amr_tokens):
+        aligns = []
+        la_index = 0
+        for idx, node in enumerate(nodes):
+            if node == 'gnode':
+                aligns.append(len(linear_amr_tokens) - 1)
+                break
+            while (la_index < len(linear_amr_tokens)) and (linear_amr_tokens[la_index] != node):
+                la_index += 1
+            aligns.append(la_index)
+        assert len(aligns) == len(nodes)
+        return aligns
 
     def set_id(self, _id):
         self.id = _id
@@ -146,7 +165,7 @@ class Instance:
         return adj, relative_pos
 
 
-def pad_instance(ins, src_len, tgt_len, stadia):
+def pad_instance(ins, src_len, linear_amr_len, tgt_len, stadia):
     new_ins = deepcopy(ins)
     node_len = len(new_ins.indexed_node)
     pl = src_len - node_len
@@ -154,6 +173,8 @@ def pad_instance(ins, src_len, tgt_len, stadia):
     new_ins.node_mask = [1] * node_len + [0] * pl
     new_ins.indexed_node.extend([C.PAD_ID] * pl)
     new_ins.graph_pos.extend([0] * pl)
+    new_ins.aligns.extend([0] * pl)
+
 
     new_adj = np.eye(src_len, src_len) * C.SELF_EDGE_ID
     new_adj[0: node_len, 0:node_len] = new_ins.adj
@@ -164,6 +185,11 @@ def pad_instance(ins, src_len, tgt_len, stadia):
     new_relative_pos[0: node_len, 0: node_len] = new_ins.relative_pos
     new_relative_pos = new_relative_pos + stadia
     new_ins.relative_pos = new_relative_pos
+
+    la_len = len(new_ins.indexed_linear_amr)
+    pl = linear_amr_len - la_len
+    new_ins.linear_amr_mask = [1] * la_len + [0] * pl
+    new_ins.indexed_linear_amr.extend([C.PAD_ID] * pl)
 
     token_len = len(new_ins.indexed_token)
     pl = tgt_len - token_len

@@ -149,7 +149,7 @@ class AttentionConvolution(nn.Module):
         direct_list.append(directed_output)
 
         mask = (adj == C.REVERSE_EDGE_ID) + (adj == C.GLOGAL_EDGE_ID)
-        reversed_output, similarity = self.directed_attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+        reversed_output, similarity = self.reversed_attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
         direct_list.append(reversed_output)
 
         output = torch.cat(direct_list, dim=-1)
@@ -161,41 +161,3 @@ class AttentionConvolution(nn.Module):
         output = output + residual
         output = self.conv_norm(output)
         return output
-
-
-# class AttentionConvolution(nn.Module):
-#     def __init__(self, config):
-#         super(AttentionConvolution, self).__init__()
-#         self.config = config
-
-#         self.directed_attention = MultiHeadAttention(
-#             self.config._hid_dim, self.config._hid_dim, self.config._hid_dim, self.config._dropout, self.config._num_heads)
-#         self.reversed_attention = MultiHeadAttention(
-#             self.config._hid_dim, self.config._hid_dim, self.config._hid_dim, self.config._dropout, self.config._num_heads)
-
-#         self.direct_fc = nn.Linear(3*self.config._hid_dim, self.config._hid_dim)
-#         self.conv_acti = get_acti_fun(self.config._activation)
-#         self.conv_norm = nn.LayerNorm(self.config._hid_dim)
-
-#     def forward(self, adj, relative_pos, hid):
-#         residual = hid
-#         direct_list = [hid]
-
-#         mask = (adj == C.DIRECTED_EDGE_ID) + (adj == C.GLOGAL_EDGE_ID)
-#         directed_output, similarity = self.directed_attention(hid, hid, mask=mask)
-#         # weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-#         # directed_output = torch.matmul(weight, hid)
-#         direct_list.append(directed_output)
-
-#         mask = (adj == C.REVERSE_EDGE_ID)
-#         reversed_output, similarity = self.directed_attention(hid, hid, mask=mask)
-#         # weight = mask / (torch.sum(mask, dim=-1, keepdim=True) + C.EPSILON)
-#         # reversed_output = torch.matmul(weight, hid)
-#         direct_list.append(reversed_output)
-
-#         output = torch.cat(direct_list, dim=-1)
-#         output = self.direct_fc(output)
-#         output = self.conv_acti(output)
-#         output = output + residual
-#         output = self.conv_norm(output)
-#         return output

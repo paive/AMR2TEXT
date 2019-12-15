@@ -1,11 +1,3 @@
-'''
-@Description: In User Settings Edit
-@Author: your name
-@Date: 2019-08-13 21:50:32
-@LastEditTime: 2019-08-29 15:19:23
-@LastEditors: Please set LastEditors
-'''
-
 import json
 import logging
 from collections import Counter
