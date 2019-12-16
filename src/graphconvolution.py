@@ -7,14 +7,16 @@ from utils import get_acti_fun
 from embeder import RelativePosEmbder
 
 
-def get_graph_convolution(conv_name, hid_dim, num_heads, directions, dropout, activation, stadia, relative_pos_embder=None):
+def get_graph_convolution(conv_name, hid_dim, num_heads, directions, dropout, activation, stadia, bigcn):
     config = GraphConvolutionConfig(hid_dim, num_heads, directions, dropout, activation, stadia)
     if conv_name == 'GCNConv':
         return GCNConvolution(config)
     elif conv_name == 'GatedGCNConv':
         return GatedConvolution(config)
-    elif conv_name == 'AttentionGCNConv':
-        return AttentionConvolution(config, relative_pos_embder=relative_pos_embder)
+    elif conv_name == 'AttentionGCNConv' and bigcn:
+        return AttentionConvolution(config)
+    elif conv_name == 'AttentionGCNConv' and not bigcn:
+        return UniAttentionConvolution(config)
     else:
         raise NameError("{} doesn't exists".format(conv_name))
 
@@ -111,14 +113,10 @@ class GatedConvolution(nn.Module):
 
 
 class AttentionConvolution(nn.Module):
-    def __init__(self, config, relative_pos_embder=None):
+    def __init__(self, config):
         super(AttentionConvolution, self).__init__()
         self.config = config
-
-        if relative_pos_embder is None:
-            self.relative_pos_embder = RelativePosEmbder(stadia=self.config._stadia)
-        else:
-            self.relative_pos_embder = relative_pos_embder
+        self.relative_pos_embder = RelativePosEmbder(stadia=self.config._stadia)
 
         self.directed_attention = MultiHeadAttention(
             query_dim=self.config._hid_dim,
@@ -154,6 +152,38 @@ class AttentionConvolution(nn.Module):
 
         output = torch.cat(direct_list, dim=-1)
         output = self.direct_fc(output)
+
+        # mask = adj != 0
+        # output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+        output = self.conv_acti(output)
+        output = output + residual
+        output = self.conv_norm(output)
+        return output
+
+
+class UniAttentionConvolution(nn.Module):
+    def __init__(self, config):
+        super(UniAttentionConvolution, self).__init__()
+        self.config = config
+        self.relative_pos_embder = RelativePosEmbder(stadia=self.config._stadia)
+
+        self.attention = MultiHeadAttention(
+            query_dim=self.config._hid_dim,
+            key_dim=self.config._hid_dim,
+            num_units=self.config._hid_dim,
+            dropout_p=self.config._dropout,
+            h=self.config._num_heads)
+
+        self.conv_acti = get_acti_fun(self.config._activation)
+        self.conv_norm = nn.LayerNorm(self.config._hid_dim)
+
+    def forward(self, adj, relative_pos, hid):
+        residual = hid
+        relative_embedding = self.relative_pos_embder(relative_pos)     # B x N x N x 1
+        relative_embedding = relative_embedding.squeeze(-1)
+
+        mask = (adj != 0)
+        output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
 
         # mask = adj != 0
         # output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)

@@ -15,7 +15,8 @@ def get_transfomergcn(config):
         directions=config.directions,
         activation=config.activation,
         dropout=config.dropout,
-        stadia=config.stadia)
+        stadia=config.stadia,
+        bigcn=config.bigcn)
     return gcn
 
 
@@ -27,7 +28,8 @@ class TransformerGCNConfig:
                  directions: int,
                  activation: str,
                  dropout: float,
-                 stadia: int):
+                 stadia: int,
+                 bigcn: bool):
         self.hid_dim = hid_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -35,6 +37,7 @@ class TransformerGCNConfig:
         self.activation = activation
         self.dropout = dropout
         self.stadia = stadia
+        self.bigcn = bigcn
 
     def __str__(self):
         return "\tHid dim:".ljust(C.PRINT_SPACE) + str(self.hid_dim) + "\n" + \
@@ -43,7 +46,8 @@ class TransformerGCNConfig:
                "\tDirections:".ljust(C.PRINT_SPACE) + str(self.directions) + '\n' + \
                "\tActivation".ljust(C.PRINT_SPACE) + str(self.activation) + "\n" + \
                "\tDropout".ljust(C.PRINT_SPACE) + str(self.dropout) + "\n" + \
-               "\tStadia".ljust(C.PRINT_SPACE) + str(self.stadia) + "\n"
+               "\tStadia".ljust(C.PRINT_SPACE) + str(self.stadia) + "\n" + \
+               "\tBigcn".ljust(C.PRINT_SPACE) + str(self.bigcn) + "\n"
 
 
 class TransformerGCN(nn.Module):
@@ -54,7 +58,8 @@ class TransformerGCN(nn.Module):
                  directions,
                  activation,
                  dropout,
-                 stadia):
+                 stadia,
+                 bigcn):
         super(TransformerGCN, self).__init__()
         self._hid_dim = hid_dim
         self._num_heads = num_heads
@@ -63,8 +68,8 @@ class TransformerGCN(nn.Module):
         self._dropout = dropout
         self._stadia = stadia
         self._conv_name = 'AttentionGCNConv'
+        self._bigcn = bigcn
 
-        # self.relative_pos_embder = RelativePosEmbder(stadia=self._stadia)
         self._layers = nn.ModuleList([
             Block(hid_dim=self._hid_dim,
                   num_heads=self._num_heads,
@@ -72,7 +77,8 @@ class TransformerGCN(nn.Module):
                   dropout=self._dropout,
                   activation=self._activation,
                   stadia=self._stadia,
-                  conv_name=self._conv_name) for i in range(num_layers)])
+                  conv_name=self._conv_name,
+                  bigcn=self._bigcn) for i in range(num_layers)])
         self.layer_weight = nn.Parameter(torch.zeros(1, num_layers))
 
     def forward(self, adj, relative_pos, h):
@@ -118,9 +124,9 @@ class Block(nn.Module):
                  activation,
                  stadia,
                  conv_name,
-                 relative_pos_embder=None,
                  convolution=None,
-                 intermediate=None):
+                 intermediate=None,
+                 bigcn=True):
         super(Block, self).__init__()
         if convolution is None:
             self.convolution = get_graph_convolution(
@@ -131,7 +137,7 @@ class Block(nn.Module):
                 dropout=dropout,
                 activation=activation,
                 stadia=stadia,
-                relative_pos_embder=relative_pos_embder)
+                bigcn=bigcn)
         else:
             self.convolution = convolution
 

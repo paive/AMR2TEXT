@@ -1,6 +1,5 @@
 import argparse
 import constants as C
-import numpy as np
 
 
 def multiple_values(num_values=0, greater_or_equal=None, data_type=int):
@@ -57,6 +56,7 @@ def get_arguments():
 
     # model
     parser.add_argument('--encoder_type', type=str, default='gcn', choices=['gcn', 'rnn', 'both'])
+    parser.add_arugment('--bigcn', type=bool, default=True)
     parser.add_argument('--emb_dim', type=int, default=360)
     parser.add_argument('--pos_emb_dim', type=int, default=300)
     parser.add_argument('--emb_dropout', type=multiple_values(2, 0), default=(.5, .5))
@@ -92,4 +92,4 @@ def get_arguments():
 
 
 def add_argument(params, name, dtype, default):
-    params.add_argument("--"+name, type=dtype, default=default)
+    params.add_argument("--" + name, type=dtype, default=default)

@@ -171,7 +171,6 @@ if __name__ == "__main__":
     # print(ins.adj)
     # print(ins.relative_pos)
 
-
     # 查看最大的儿子数
     # max_son_sum = 0
     # ins_id = -1
