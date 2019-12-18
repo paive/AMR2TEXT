@@ -106,6 +106,9 @@ def prepare_input_from_dicts(batch_dicts, cuda_device=None):
         node_mask = node_mask.to(cuda_device)
         tokens = tokens.to(cuda_device)
         token_mask = token_mask.to(cuda_device)
+        linear_amr = linear_amr.to(cuda_device)
+        linear_amr_mask = linear_amr_mask.to(cuda_device)
+        aligns = aligns.to(cuda_device)
     return nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns
 
 
@@ -233,6 +236,8 @@ def test(args, model, test_iter, vocab, inversed_vocab, cuda_device):
         if finish:
             break
     result_dir = os.path.join(args.result_dir, args.encoder_type, str(args.stadia))
+    if not os.path.exists(result_dir):
+        os.mkdir(result_dir)
     bleu = corpus_bleu([[g] for g in gold_snt], pred_snt)
     with open(os.path.join(result_dir, "output.txt"), 'w') as f:
         lines = ["Corpus bleu score: " + str(bleu) + "\n\n"]
@@ -272,8 +277,11 @@ def main(args, logger, cuda_device):
 
 if __name__ == "__main__":
     args = get_arguments()
+    log_dir = os.path.join(args.log_dir, args.encoder_type, str(args.stadia))
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
     logger = setup_main_logger(__name__, file_logging=True, console=not args.quiet,
-                               path=os.path.join(args.log_dir, C.LOG_NAME))
+                               path=os.path.join(log_dir, C.LOG_NAME))
     if args.cuda_device is not None:
         cuda_device = torch.device(0)
     else:

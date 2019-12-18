@@ -51,12 +51,12 @@ def get_arguments():
     # vocabulary
     parser.add_argument('--num_words', type=int)
     parser.add_argument('--min_count', type=int, default=2)
-    parser.add_argument('--vocab', type=str, default='./data/vocab.json')
-    parser.add_argument('--edge_vocab', type=str, default='./data/edge_vocab.json')
+    parser.add_argument('--vocab', type=str, default=f'./data/{data_version}/vocab.json')
+    parser.add_argument('--edge_vocab', type=str, default=f'./data/{data_version}/edge_vocab.json')
 
     # model
     parser.add_argument('--encoder_type', type=str, default='gcn', choices=['gcn', 'rnn', 'both'])
-    parser.add_arugment('--bigcn', type=bool, default=True)
+    parser.add_argument('--bigcn', action='store_true')
     parser.add_argument('--emb_dim', type=int, default=360)
     parser.add_argument('--pos_emb_dim', type=int, default=300)
     parser.add_argument('--emb_dropout', type=multiple_values(2, 0), default=(.5, .5))
@@ -75,7 +75,7 @@ def get_arguments():
     # predict
     parser.add_argument('--result_dir', type=str, default='./result')
     parser.add_argument('--beam_size', type=int, default=10)
-    parser.add_argument('--max_predict_len', type=int, default=300)
+    parser.add_argument('--max_step', type=int, default=300)
 
     # train
     parser.add_argument('--batch_size', type=int, default=16)

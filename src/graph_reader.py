@@ -124,19 +124,19 @@ if __name__ == "__main__":
     # from utils import id2sentence
     from utils import visualization_graph
 
-    dev_amr = './data/dev.amr'
-    dev_snt = './data/dev.snt'
-    dev_grh = "./data/dev.grh"
-    dev_linear_amr = './data/dev.linear_amr'
-    train_amr = './data/train.amr'
-    train_snt = './data/train.snt'
-    train_grh = './data/train.grh'
-    train_linear_amr = './data/train.linear_amr'
+    dev_amr = './data/amr2.0/dev.amr'
+    dev_snt = './data/amr2.0/dev.snt'
+    dev_grh = "./data/amr2.0/dev.grh"
+    dev_linear_amr = './data/amr2.0/dev.linear_amr'
+    train_amr = './data/amr2.0/train.amr'
+    train_snt = './data/amr2.0/train.snt'
+    train_grh = './data/amr2.0/train.grh'
+    train_linear_amr = './data/amr2.0/train.linear_amr'
 
-    test_amr = './data/test.amr'
-    test_snt = './data/test.snt'
-    test_grh = "./data/test.grh"
-    test_linear_amr = './data/test.linear_amr'
+    test_amr = './data/amr2.0/test.amr'
+    test_snt = './data/amr2.0/test.snt'
+    test_grh = "./data/amr2.0/test.grh"
+    test_linear_amr = './data/amr2.0/test.linear_amr'
 
     # vocab = build_from_paths([train_amr, train_snt, dev_amr, dev_snt], 30000, 2)
     # vocab_to_json(vocab, "./data/new_vocab.json")
@@ -146,23 +146,19 @@ if __name__ == "__main__":
     inverse_vocab = reverse_vocab(vocab)
     edge_vocab = vocab_from_json('./data/edge_vocab.json')
 
-    # train_iter = BucketIterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 200, 200, 20, True)
-    # dev_iter = BucketIterator(vocab, edge_vocab, 3, dev_amr, dev_grh, dev_snt, 200, 200, 10, True)
-    # test_iter = BucketIterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 200, 200, 10, False)
-
-    # train_iter = Iterator(vocab, edge_vocab, 16, train_amr, train_grh, train_snt, 3, 200, 200)
-    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 3, 200, 200)
+    train_iter = Iterator(vocab, edge_vocab, 1, train_amr, train_grh, train_linear_amr, train_snt, 1)
+    # dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 3, 200, 200)
     # test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 3, 200, 200)
 
-    i = 0
-    while True:
-        print(i)
-        i += 1
-        data, finish = dev_iter.next()
-        print(data['batch_nlabel'][0])
-        print(data['linear_amr'][0])
-        print(data['aligns'][0])
-        break
+    # i = 0
+    # while True:
+    #     print(i)
+    #     i += 1
+    #     data, finish = dev_iter.next()
+    #     print(data['batch_nlabel'][0])
+    #     print(data['linear_amr'][0])
+    #     print(data['aligns'][0])
+    #     break
 
     # 可视化语义图
     # ins = dev_iter.instances[266]
@@ -186,14 +182,23 @@ if __name__ == "__main__":
     # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
 
     # 查看最大的深度
-    # max_depth = 0
-    # ins_id = -1
-    # for idx, ins in enumerate(test_iter.instances):
-    #     pos = ins.graph_pos
-    #     ins_max_depth = np.max(ins.graph_pos)
-    #     if max_depth < ins_max_depth:
-    #         max_depth = ins_max_depth
-    #         ins_id = idx
-    # print(max_depth)
+    import numpy as np
+    from collections import Counter
+    max_depth = 0
+    ins_id = -1
+    depths = Counter()
+    for idx, ins in enumerate(train_iter.instances):
+        pos = ins.graph_pos
+        ins_max_depth = np.max(ins.graph_pos)
+        ins_max_depth = (ins_max_depth - 1) // 2
+        depths.update({ins_max_depth: 1})
+        if max_depth < ins_max_depth:
+            max_depth = ins_max_depth
+            ins_id = idx
+
+    print(idx)
+    print(max_depth)
+    print(depths)
+
     # ins = test_iter.instances[ins_id]
     # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)

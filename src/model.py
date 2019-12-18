@@ -7,14 +7,15 @@ from embeder import Embeder
 from embeder import PosEmbederConfig
 from embeder import PosEmbeder
 from transformergcn import TransformerGCNConfig
-from transformergcn import get_transfomergcn
+from transformergcn import get_transfomergcn, TransformerGCN
 from decoder import DecoderConfig
 from decoder import Decoder
+from rnn_encoder import RNNEncoder
 import constants as C
 from utils import deprecated
 
 
-def build_gcn_encder(args):
+def build_gcn_encoder(args):
     config = TransformerGCNConfig(
         hid_dim=args.hid_dim,
         num_layers=args.gcn_layers,
@@ -22,18 +23,23 @@ def build_gcn_encder(args):
         directions=4,
         activation="relu",
         dropout=args.model_dropout[0],
-        stadia=args.stadia)
+        stadia=args.stadia,
+        bigcn=args.bigcn)
     print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
     return encoder
 
 
+def build_rnn_encoder(args):
+    return RNNEncoder(args.hid_dim, args.rnn_layers, args.model_dropout[0])
+
+
 def build_encoder(args):
     if args.encoder_type == 'gcn':
-        encoder = build_gcn_encder(args)
-    elif args.encode_type == 'rnn':
-        raise NotImplementedError
-    elif args.encode_type == 'both':
+        encoder = build_gcn_encoder(args)
+    elif args.encoder_type == 'rnn':
+        encoder = build_rnn_encoder(args)
+    elif args.encoder_type == 'both':
         raise NotImplementedError
     else:
         raise NotImplementedError
@@ -84,7 +90,10 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
                                    emb_dim=args.pos_emb_dim,
                                    pad_idx=0)
 
-    emb2hid = nn.Linear(args.emb_dim+args.pos_emb_dim, args.hid_dim)
+    if args.encoder_type != 'rnn':
+        emb2hid = nn.Linear(args.emb_dim + args.pos_emb_dim, args.hid_dim)
+    else:
+        emb2hid = nn.Linear(args.emb_dim, args.hid_dim)
 
     logger.info("Build encoder...")
     encoder = build_encoder(args)
@@ -105,7 +114,8 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
     decoder = build_decoder(args, len(vocab))
     projector = nn.Linear(args.hid_dim, len(vocab))
 
-    model = Model(node_embeder=node_embeder,
+    model = Model(encoder_type=args.encoder_type,
+                  node_embeder=node_embeder,
                   pos_embeder=pos_embeder,
                   emb2hid=emb2hid,
                   token_embeder=token_embeder,
@@ -120,6 +130,7 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
 
 class Model(nn.Module):
     def __init__(self,
+                 encoder_type,
                  node_embeder,
                  pos_embeder,
                  emb2hid,
@@ -129,6 +140,7 @@ class Model(nn.Module):
                  projector,
                  init_param):
         super(Model, self).__init__()
+        self.encoder_type = encoder_type
         self.node_embeder = node_embeder
         self.pos_embeder = pos_embeder
         self.token_embeder = token_embeder
@@ -147,6 +159,25 @@ class Model(nn.Module):
                 torch.nn.init.orthogonal_(param)
             elif param.dim() > 2:
                 torch.nn.init.kaiming_uniform_(param, a=1, mode='fan_in')
+
+    def embedding_linear_amr(self, linear_amr):
+        laembedding = self.token_embeder(linear_amr)
+        h = self.emb2hid(laembedding)
+        return h
+
+    def encoder_linear_amr(self, h, linear_amr_mask):
+        def get_last_value(value, mask):
+            """
+            value: B x N x H
+            mask : B x N
+            """
+            batch_size, _, hid_size = value.size()
+            idx = torch.sum(mask, dim=-1) - 1
+            idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
+            return torch.gather(value, dim=1, index=idx).squeeze(1)
+        value = self.encoder(h)
+        state = get_last_value(value, linear_amr_mask)
+        return value, state
 
     def embedding_graph(self, nlabel, npos):
         nembeding = self.node_embeder(nlabel)
@@ -178,9 +209,14 @@ class Model(nn.Module):
         return logits
 
     def forward(self, nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns):
-        h = self.embedding_graph(nlabel, npos)
-        value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
-        logits = self.decode_tokens(tokens, value, node_mask, state)
+        if self.encoder_type == 'gcn':
+            h = self.embedding_graph(nlabel, npos)
+            value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
+            logits = self.decode_tokens(tokens, value, node_mask, state)
+        elif self.encoder_type == 'rnn':
+            h = self.embedding_linear_amr(linear_amr)
+            value, state = self.encoder_linear_amr(h, linear_amr_mask)
+            logits = self.decode_tokens(tokens, value, linear_amr_mask, state)
 
         targets = tokens[:, 1:].contiguous()
         weights = token_mask[:, 1:].float()
