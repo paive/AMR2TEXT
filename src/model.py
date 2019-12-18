@@ -223,9 +223,15 @@ class Model(nn.Module):
         loss = sequence_cross_entropy_with_logits(logits=logits, targets=targets, weights=weights)
         return loss
 
-    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, max_step, beam_size):
-        h = self.embedding_graph(nlabel, npos)
-        value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
+    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, linear_amr, linear_amr_mask, max_step, beam_size):
+        if self.encoder_type == 'gcn':
+            h = self.embedding_graph(nlabel, npos)
+            value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
+            enc_mask = node_mask
+        elif self.encoder_type == 'rnn':
+            h = self.embedding_linear_amr(linear_amr)
+            value, state = self.encoder_linear_amr(h, linear_amr_mask)
+            enc_mask = linear_amr_mask
 
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
@@ -244,11 +250,11 @@ class Model(nn.Module):
         emb = self.token_embeder(start_tokens)
         if self.decoder.config.cell_type == 'GRU':
             state, cov_vec, similarity = self.decoder._step(
-                emb=emb, value=value, value_mask=node_mask,
+                emb=emb, value=value, value_mask=enc_mask,
                 state=state, cov_vec=cov_vec)
         elif self.decoder.config.cell_type == 'LSTM':
             state, c1, cov_vec, similarity = self.decoder._step(
-                emb=emb, value=value, value_mask=node_mask,
+                emb=emb, value=value, value_mask=enc_mask,
                 state=state, c1=c1, cov_vec=cov_vec)
         logit = self.projector(state)
         probability = torch.log_softmax(logit, dim=-1)
@@ -258,7 +264,7 @@ class Model(nn.Module):
         t = t.view(-1)                                                    # B*bs
 
         value = value.repeat_interleave(beam_size, dim=0)                            # B*bs x N x H
-        node_mask = node_mask.repeat_interleave(beam_size, dim=0)                    # B*bs x N
+        enc_mask = enc_mask.repeat_interleave(beam_size, dim=0)                    # B*bs x N
         state = state.repeat_interleave(beam_size, dim=0)                            # B*bs x H
         if self.decoder.config.coverage:
             cov_vec = cov_vec.repeat_interleave(beam_size, dim=0)
@@ -271,11 +277,11 @@ class Model(nn.Module):
             emb = self.token_embeder(t)                                     # B*bs x E
             if self.decoder.config.cell_type == 'GRU':
                 state, cov_vec, similarity = self.decoder._step(
-                    emb=emb, value=value, value_mask=node_mask,
+                    emb=emb, value=value, value_mask=enc_mask,
                     state=state, cov_vec=cov_vec)
             elif self.decoder.config.cell_type == 'LSTM':
                 state, c1, cov_vec, similarity = self.decoder._step(
-                    emb=emb, value=value, value_mask=node_mask,
+                    emb=emb, value=value, value_mask=enc_mask,
                     state=state, c1=c1, cov_vec=cov_vec)
             his_attns.append(similarity.view(-1, beam_size, similarity.size(-1)))  # B x bs x N
             logit = self.projector(state)                           # B*bs x V

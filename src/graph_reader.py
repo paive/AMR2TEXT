@@ -118,33 +118,33 @@ class Iterator(IteratorBase):
 
 if __name__ == "__main__":
     from vocabulary import vocab_from_json
-    # from vocabulary import vocab_to_json
-    # from vocabulary import  build_from_paths
+    from vocabulary import vocab_to_json
+    from vocabulary import build_from_paths
     from vocabulary import reverse_vocab
     # from utils import id2sentence
     from utils import visualization_graph
 
-    dev_amr = './data/amr2.0/dev.amr'
-    dev_snt = './data/amr2.0/dev.snt'
-    dev_grh = "./data/amr2.0/dev.grh"
-    dev_linear_amr = './data/amr2.0/dev.linear_amr'
-    train_amr = './data/amr2.0/train.amr'
-    train_snt = './data/amr2.0/train.snt'
-    train_grh = './data/amr2.0/train.grh'
-    train_linear_amr = './data/amr2.0/train.linear_amr'
+    dev_amr = './data/amr1.0/dev.amr'
+    dev_snt = './data/amr1.0/dev.snt'
+    dev_grh = "./data/amr1.0/dev.grh"
+    dev_linear_amr = './data/amr1.0/dev.linear_amr'
+    train_amr = './data/amr1.0/train.amr'
+    train_snt = './data/amr1.0/train.snt'
+    train_grh = './data/amr1.0/train.grh'
+    train_linear_amr = './data/amr1.0/train.linear_amr'
 
-    test_amr = './data/amr2.0/test.amr'
-    test_snt = './data/amr2.0/test.snt'
-    test_grh = "./data/amr2.0/test.grh"
-    test_linear_amr = './data/amr2.0/test.linear_amr'
+    test_amr = './data/amr1.0/test.amr'
+    test_snt = './data/amr1.0/test.snt'
+    test_grh = "./data/amr1.0/test.grh"
+    test_linear_amr = './data/amr1.0/test.linear_amr'
 
     # vocab = build_from_paths([train_amr, train_snt, dev_amr, dev_snt], 30000, 2)
-    # vocab_to_json(vocab, "./data/new_vocab.json")
+    # vocab_to_json(vocab, "./data/amr1.0/vocab.json")
     # raise NotImplementedError
 
-    vocab = vocab_from_json('./data/vocab.json')
+    vocab = vocab_from_json('./data/amr1.0/vocab.json')
     inverse_vocab = reverse_vocab(vocab)
-    edge_vocab = vocab_from_json('./data/edge_vocab.json')
+    edge_vocab = vocab_from_json('./data/amr1.0/edge_vocab.json')
 
     train_iter = Iterator(vocab, edge_vocab, 1, train_amr, train_grh, train_linear_amr, train_snt, 1)
     # dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 3, 200, 200)
@@ -195,7 +195,6 @@ if __name__ == "__main__":
         if max_depth < ins_max_depth:
             max_depth = ins_max_depth
             ins_id = idx
-
     print(idx)
     print(max_depth)
     print(depths)
