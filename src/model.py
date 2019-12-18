@@ -7,10 +7,11 @@ from embeder import Embeder
 from embeder import PosEmbederConfig
 from embeder import PosEmbeder
 from transformergcn import TransformerGCNConfig
-from transformergcn import get_transfomergcn, TransformerGCN
+from transformergcn import get_transfomergcn
 from decoder import DecoderConfig
 from decoder import Decoder
 from rnn_encoder import RNNEncoder
+from ensemble_encoder import EnsembleEncoder
 import constants as C
 from utils import deprecated
 
@@ -25,7 +26,6 @@ def build_gcn_encoder(args):
         dropout=args.model_dropout[0],
         stadia=args.stadia,
         bigcn=args.bigcn)
-    print("Dcgcn encoder config:\n", config)
     encoder = get_transfomergcn(config)
     return encoder
 
@@ -34,13 +34,20 @@ def build_rnn_encoder(args):
     return RNNEncoder(args.hid_dim, args.rnn_layers, args.model_dropout[0])
 
 
+def build_ensemble_encoder(args):
+    gcn_encoder = build_gcn_encoder(args)
+    rnn_encoder = build_rnn_encoder(args)
+    ensemble_encoder = EnsembleEncoder(gcn_encoder, rnn_encoder, args.hid_dim)
+    return ensemble_encoder
+
+
 def build_encoder(args):
     if args.encoder_type == 'gcn':
         encoder = build_gcn_encoder(args)
     elif args.encoder_type == 'rnn':
         encoder = build_rnn_encoder(args)
     elif args.encoder_type == 'both':
-        raise NotImplementedError
+        encoder = build_ensemble_encoder(args)
     else:
         raise NotImplementedError
     return encoder
@@ -53,7 +60,6 @@ def build_decoder(args, vocab_size):
                                    coverage=args.coverage,
                                    cell_type=args.decoder_cell,
                                    dropout=args.model_dropout[1])
-    print("RNN decoder config:\n", decoder_config)
     decoder = Decoder(decoder_config)
     return decoder
 
@@ -64,7 +70,6 @@ def build_embeder(num_emb, emb_dim, scale_grad_by_freq, pad_id, dropout):
                                    padding_idx=pad_id,
                                    scale_grad_by_freq=scale_grad_by_freq,
                                    dropout=dropout)
-    print("Embedder config:\n", embeder_config)
     embeder = Embeder(embeder_config)
     return embeder
 
@@ -73,27 +78,39 @@ def build_posembeder(max_seq_len, emb_dim, pad_idx):
     posembeder_config = PosEmbederConfig(max_seq_len=max_seq_len,
                                          emb_dim=emb_dim,
                                          padding_idx=pad_idx)
-    print("PosEmbedder config:\n", posembeder_config)
     posembeder = PosEmbeder(posembeder_config)
     return posembeder
 
 
 def build_model(args, logger, cuda_device, vocab, edge_vocab):
-    logger.info("Build node embedder...")
     node_embeder = build_embeder(num_emb=len(vocab),
                                  emb_dim=args.emb_dim,
                                  scale_grad_by_freq=args.scale_grad_by_freq,
                                  pad_id=C.PAD_ID,
                                  dropout=args.emb_dropout[0])
-    logger.info("Build pos embedder...")
-    pos_embeder = build_posembeder(max_seq_len=args.max_seq_len[0],
-                                   emb_dim=args.pos_emb_dim,
-                                   pad_idx=0)
+    logger.info(f"Build encoder {args.encoder_type}...")
 
-    if args.encoder_type != 'rnn':
+    if args.encoder_type == 'gcn':
         emb2hid = nn.Linear(args.emb_dim + args.pos_emb_dim, args.hid_dim)
-    else:
+        graph_emb2hid = None
+        linear_emb2hid = None
+        pos_embeder = build_posembeder(
+            max_seq_len=args.max_seq_len[0],
+            emb_dim=args.pos_emb_dim,
+            pad_idx=0)
+    elif args.encoder_type == 'rnn':
         emb2hid = nn.Linear(args.emb_dim, args.hid_dim)
+        graph_emb2hid = None
+        linear_emb2hid = None
+        pos_embeder = None
+    elif args.encoder_type == 'both':
+        emb2hid = None
+        graph_emb2hid = nn.Linear(args.emb_dim + args.pos_emb_dim, args.hid_dim)
+        linear_emb2hid = nn.Linear(args.emb_dim, args.hid_dim)
+        pos_embeder = build_posembeder(
+            max_seq_len=args.max_seq_len[0],
+            emb_dim=args.pos_emb_dim,
+            pad_idx=0)
 
     logger.info("Build encoder...")
     encoder = build_encoder(args)
@@ -122,10 +139,34 @@ def build_model(args, logger, cuda_device, vocab, edge_vocab):
                   encoder=encoder,
                   decoder=decoder,
                   projector=projector,
-                  init_param=args.init_param)
+                  init_param=args.init_param,
+                  graph_emb2hid=graph_emb2hid,
+                  linear_emb2hid=linear_emb2hid)
     if cuda_device is not None:
         model.to(cuda_device)
     return model
+
+
+def get_gnode_value(value, mask):
+    """
+    value: B x N x H
+    mask : B x N
+    """
+    batch_size, _, hid_size = value.size()
+    idx = torch.sum(mask, dim=-1) - 1
+    idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
+    return torch.gather(value, dim=1, index=idx).squeeze(1)
+
+
+def get_last_value(value, mask):
+    """
+    value: B x N x H
+    mask : B x N
+    """
+    batch_size, _, hid_size = value.size()
+    idx = torch.sum(mask, dim=-1) - 1
+    idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
+    return torch.gather(value, dim=1, index=idx).squeeze(1)
 
 
 class Model(nn.Module):
@@ -138,13 +179,17 @@ class Model(nn.Module):
                  encoder,
                  decoder,
                  projector,
-                 init_param):
+                 init_param,
+                 graph_emb2hid=None,
+                 linear_emb2hid=None):
         super(Model, self).__init__()
         self.encoder_type = encoder_type
         self.node_embeder = node_embeder
         self.pos_embeder = pos_embeder
         self.token_embeder = token_embeder
         self.emb2hid = emb2hid
+        self.graph_emb2hid = graph_emb2hid
+        self.linear_emb2hid = linear_emb2hid
         self.encoder = encoder
         self.decoder = decoder
         self.projector = projector
@@ -161,20 +206,11 @@ class Model(nn.Module):
                 torch.nn.init.kaiming_uniform_(param, a=1, mode='fan_in')
 
     def embedding_linear_amr(self, linear_amr):
-        laembedding = self.token_embeder(linear_amr)
-        h = self.emb2hid(laembedding)
+        linear_embedding = self.node_embeder(linear_amr)
+        h = self.emb2hid(linear_embedding)
         return h
 
-    def encoder_linear_amr(self, h, linear_amr_mask):
-        def get_last_value(value, mask):
-            """
-            value: B x N x H
-            mask : B x N
-            """
-            batch_size, _, hid_size = value.size()
-            idx = torch.sum(mask, dim=-1) - 1
-            idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
-            return torch.gather(value, dim=1, index=idx).squeeze(1)
+    def encode_linear_amr(self, h, linear_amr_mask):
         value = self.encoder(h)
         state = get_last_value(value, linear_amr_mask)
         return value, state
@@ -188,18 +224,23 @@ class Model(nn.Module):
 
     def encode_graph(self, adjs, relative_pos, h, node_mask):
         """Encode graph with an encoder"""
-        def get_gnode_value(value, mask):
-            """
-            value: B x N x H
-            mask : B x N
-            """
-            batch_size, _, hid_size = value.size()
-            idx = torch.sum(mask, dim=-1) - 1
-            idx = idx.reshape(batch_size, 1, 1).expand(batch_size, 1, hid_size)
-            return torch.gather(value, dim=1, index=idx).squeeze(1)
         value = self.encoder(adjs, relative_pos, h)
         state = get_gnode_value(value, node_mask)
         return value, state
+
+    def encode_both(self, adjs, relative_pos, gh, node_mask, lh, linear_amr_mask, aligns):
+        value = self.encoder(adjs, relative_pos, gh, lh, aligns)
+        state = get_gnode_value(value, node_mask)
+        return value, state
+
+    def embedding_both(self, nlabel, npos, linear_amr):
+        graph_embedding = self.node_embeder(nlabel)
+        graph_pos_embedding = self.pos_embeder(npos)
+        ge = self.graph_emb2hid(torch.cat((graph_embedding, graph_pos_embedding), dim=-1))
+
+        linear_embedding = self.node_embeder(linear_amr)
+        le = self.linear_emb2hid(linear_embedding)
+        return ge, le
 
     def decode_tokens(self, tokens, value, value_mask, state):
         """Decode tokens with decoder and graph embeddings"""
@@ -215,8 +256,12 @@ class Model(nn.Module):
             logits = self.decode_tokens(tokens, value, node_mask, state)
         elif self.encoder_type == 'rnn':
             h = self.embedding_linear_amr(linear_amr)
-            value, state = self.encoder_linear_amr(h, linear_amr_mask)
+            value, state = self.encode_linear_amr(h, linear_amr_mask)
             logits = self.decode_tokens(tokens, value, linear_amr_mask, state)
+        elif self.encoder_type == 'both':
+            gh, lh = self.embedding_both(nlabel, npos, linear_amr)
+            value, state = self.encode_both(adjs, relative_pos, gh, node_mask, lh, linear_amr_mask, aligns)
+            logits = self.decode_tokens(tokens, value, node_mask, state)
 
         targets = tokens[:, 1:].contiguous()
         weights = token_mask[:, 1:].float()
@@ -232,6 +277,8 @@ class Model(nn.Module):
             h = self.embedding_linear_amr(linear_amr)
             value, state = self.encoder_linear_amr(h, linear_amr_mask)
             enc_mask = linear_amr_mask
+        else:
+            raise NotImplementedError
 
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
@@ -273,7 +320,7 @@ class Model(nn.Module):
         if self.decoder.config.cell_type == 'LSTM':
             c1 = c1.repeat_interleave(beam_size, dim=0)
 
-        for idx in range(max_step-1):
+        for idx in range(max_step - 1):
             emb = self.token_embeder(t)                                     # B*bs x E
             if self.decoder.config.cell_type == 'GRU':
                 state, cov_vec, similarity = self.decoder._step(
@@ -320,7 +367,7 @@ class Model(nn.Module):
         predictions = [history[-1].cpu()]
         pred_attns = [his_attns[-1].cpu()]
         bp = None
-        for i in range(max_step-2, -1, -1):
+        for i in range(max_step - 2, -1, -1):
             cur_poi = back_pointer[i].cpu()                # B x bs
             cur_his = history[i].cpu()                     # B x bs
             cur_attn = his_attns[i].cpu()                  # B x bs x N

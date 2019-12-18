@@ -60,7 +60,8 @@ class AMRGraph:
 
 class LinearAMR:
     def __init__(self, linear_amr):
-        self.tokens = linear_amr.strip().split()    
+        self.tokens = linear_amr.strip().split()
+        self.tokens.append('gnode')
 
 
 class Sentence:
@@ -105,9 +106,6 @@ class Instance:
         aligns = []
         la_index = 0
         for idx, node in enumerate(nodes):
-            if node == 'gnode':
-                aligns.append(len(linear_amr_tokens) - 1)
-                break
             while (la_index < len(linear_amr_tokens)) and (linear_amr_tokens[la_index] != node):
                 la_index += 1
             aligns.append(la_index)
