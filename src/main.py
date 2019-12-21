@@ -228,7 +228,7 @@ def test(args, model, test_iter, vocab, inversed_vocab, cuda_device):
         batch_dicts, finish, raw_snt = test_iter.next(raw_snt=True)
         nlabel, npos, adjs, relative_pos, node_mask, tokens, token_mask, linear_amr, linear_amr_mask, aligns = prepare_input_from_dicts(batch_dicts, cuda_device)
         predictions, _ = model.predict_with_beam_search(
-            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, linear_amr, linear_amr_mask, args.max_step, args.beam_size)
+            tokens[:, 0], nlabel, npos, adjs, relative_pos, node_mask, linear_amr, linear_amr_mask, aligns, args.max_step, args.beam_size)
         # predictions, _ = beam.advance(nlabel, npos, adjs, relative_pos, node_mask)
         pred = id2sentence(predictions, inversed_vocab)
         gold_snt.extend(raw_snt)

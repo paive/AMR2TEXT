@@ -268,7 +268,7 @@ class Model(nn.Module):
         loss = sequence_cross_entropy_with_logits(logits=logits, targets=targets, weights=weights)
         return loss
 
-    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, linear_amr, linear_amr_mask, max_step, beam_size):
+    def predict_with_beam_search(self, start_tokens, nlabel, npos, adjs, relative_pos, node_mask, linear_amr, linear_amr_mask, aligns, max_step, beam_size):
         if self.encoder_type == 'gcn':
             h = self.embedding_graph(nlabel, npos)
             value, state = self.encode_graph(adjs, relative_pos, h, node_mask)
@@ -277,8 +277,10 @@ class Model(nn.Module):
             h = self.embedding_linear_amr(linear_amr)
             value, state = self.encoder_linear_amr(h, linear_amr_mask)
             enc_mask = linear_amr_mask
-        else:
-            raise NotImplementedError
+        elif self.encoder_type == 'both':
+            gh, lh = self.embedding_both(nlabel, npos, linear_amr)
+            value, state = self.encode_both(adjs, relative_pos, gh, node_mask, lh, linear_amr_mask, aligns)
+            enc_mask = node_mask
 
         if self.decoder.config.cell_type == 'LSTM':
             c1 = torch.zeros_like(state)
