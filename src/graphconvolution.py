@@ -174,16 +174,23 @@ class UniAttentionConvolution(nn.Module):
             dropout_p=self.config._dropout,
             h=self.config._num_heads)
 
+        self.direct_fc = nn.Linear(2*self.config._hid_dim, self.config._hid_dim)
         self.conv_acti = get_acti_fun(self.config._activation)
         self.conv_norm = nn.LayerNorm(self.config._hid_dim)
 
     def forward(self, adj, relative_pos, hid):
         residual = hid
+        direct_list = [hid]
+
         relative_embedding = self.relative_pos_embder(relative_pos)     # B x N x N x 1
         relative_embedding = relative_embedding.squeeze(-1)
 
         mask = (adj != 0)
         output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)
+
+        direct_list.append(output)
+        output = torch.cat(direct_list, dim=-1)
+        output = self.direct_fc(output)
 
         # mask = adj != 0
         # output, similarity = self.attention(hid, hid, mask=mask, relative_embedding=relative_embedding)

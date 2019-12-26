@@ -61,6 +61,30 @@ def load_model(args, model):
     if os.path.exists(model_dict_path):
         logger.info("Model state dict exists.")
         model.load_state_dict(torch.load(model_dict_path))
+
+    # 打印每一层图卷积中不同方向相对位置的嵌入
+    for idx, layer in enumerate(model.encoder._layers):
+        print(layer.convolution.relative_pos_embder.embeder.weight.detach().cpu())
+    raise NotImplementedError
+
+    # 打印每一层图卷积不同方向的权重
+    # for idx, layer in enumerate(model.encoder._layers):
+    #     df_weight = layer.convolution.direct_fc.weight.detach().cpu()
+    #     dirc_weights = df_weight.split(512, dim=-1)
+    #     print(torch.max(dirc_weights[0]), torch.min(dirc_weights[0]))
+    #     print(torch.mean(dirc_weights[0]), torch.var(dirc_weights[0]))
+    #     print()
+    #     print(torch.max(dirc_weights[1]), torch.min(dirc_weights[1]))
+    #     print(torch.mean(dirc_weights[1]), torch.var(dirc_weights[1]))
+    #     print()
+    #     print(torch.max(dirc_weights[2]), torch.min(dirc_weights[2]))
+    #     print(torch.mean(dirc_weights[2]), torch.var(dirc_weights[2]))
+
+    #     df_weight = df_weight.numpy()
+    #     print(df_weight.shape)
+    #     np.savetxt(f'./tmp/layer_fc_{idx}', df_weight)
+    # raise NotImplementedError
+
     return trained_iters, best_iter, best_loss
 
 

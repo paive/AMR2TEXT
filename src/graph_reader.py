@@ -146,17 +146,17 @@ if __name__ == "__main__":
     inverse_vocab = reverse_vocab(vocab)
     edge_vocab = vocab_from_json('./data/amr2.0/edge_vocab.json')
 
-    train_iter = Iterator(vocab, edge_vocab, 1, train_amr, train_grh, train_linear_amr, train_snt, 1)
-    # dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 3, 200, 200)
-    # test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_snt, 3, 200, 200)
+    # train_iter = Iterator(vocab, edge_vocab, 1, train_amr, train_grh, train_linear_amr, train_snt, 1)
+    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 1, 200, 200)
+    test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_linear_amr, test_snt, 1, 200, 200)
 
-    for ins in train_iter.instances:
-        al = len(ins.aligns)
-        ll = len(ins.indexed_linear_amr)
-        nl = len(ins.indexed_node)
-        assert nl == al
-        if ll < nl - 1:
-            print(ll, nl)
+    # for ins in train_iter.instances:
+    #     al = len(ins.aligns)
+    #     ll = len(ins.indexed_linear_amr)
+    #     nl = len(ins.indexed_node)
+    #     assert nl == al
+    #     if ll < nl - 1:
+    #         print(ll, nl)
 
     # 可视化语义图
     # ins = dev_iter.instances[266]
@@ -185,10 +185,13 @@ if __name__ == "__main__":
     # max_depth = 0
     # ins_id = -1
     # depths = Counter()
-    # for idx, ins in enumerate(train_iter.instances):
+    # for idx, ins in enumerate(train_iter.instances + dev_iter.instances + test_iter.instances):
     #     pos = ins.graph_pos
-    #     ins_max_depth = np.max(ins.graph_pos)
-    #     ins_max_depth = (ins_max_depth - 1) // 2
+    #     ins_max_depth = np.max(ins.graph_pos) - 1
+    #     if ins_max_depth == 4:
+    #         visualization_graph(-1, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab, edge_set=[1, 3])
+    #         raise NotImplementedError
+    #     # ins_max_depth = (ins_max_depth - 1) // 2
     #     depths.update({ins_max_depth: 1})
     #     if max_depth < ins_max_depth:
     #         max_depth = ins_max_depth

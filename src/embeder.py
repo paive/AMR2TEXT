@@ -97,7 +97,7 @@ class PosEmbeder(nn.Module):
 class RelativePosEmbder(nn.Module):
     def __init__(self, stadia):
         super(RelativePosEmbder, self).__init__()
-        self.embeder = nn.Embedding((stadia+2)*2, 1, padding_idx=stadia+1)
+        self.embeder = nn.Embedding((stadia + 1) * 2, 1, padding_idx=2 * stadia + 1)
 
     def forward(self, relativepos):
         """The range of element \in relativepos is [-stadia, stadia]"""
