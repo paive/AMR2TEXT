@@ -44,13 +44,15 @@ class IteratorBase:
 
 class Iterator(IteratorBase):
     def __init__(self, vocab, edge_vocab, batch_size, amr_path, grp_path, linear_amr_path, snt_path, stadia,
-                 max_src_len=None, max_tgt_len=None, keep_ratio=None):
+                 max_src_len=None, max_tgt_len=None, keep_ratio=None, shuffle=True):
         super().__init__(vocab, edge_vocab, batch_size, amr_path, grp_path, linear_amr_path, snt_path, stadia, max_src_len, max_tgt_len, keep_ratio=keep_ratio)
         self.cur = 0
+        self.shuffle = shuffle
 
     def next(self, raw_snt=False):
         if self.cur == 0:
-            random.shuffle(self.instances)
+            if self.shuffle:
+                random.shuffle(self.instances)
         r = min(self.cur + self.batch_size, len(self.instances))
         batch_instances = self.instances[self.cur: r]
         batch_dict = self._prepare(batch_instances)
@@ -147,8 +149,21 @@ if __name__ == "__main__":
     edge_vocab = vocab_from_json('./data/amr2.0/edge_vocab.json')
 
     # train_iter = Iterator(vocab, edge_vocab, 1, train_amr, train_grh, train_linear_amr, train_snt, 1)
-    dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 1, 200, 200)
-    test_iter = Iterator(vocab, edge_vocab, 16, test_amr, test_grh, test_linear_amr, test_snt, 1, 200, 200)
+    # dev_iter = Iterator(vocab, edge_vocab, 16, dev_amr, dev_grh, dev_linear_amr, dev_snt, 1, 200, 200)
+    test_iter = Iterator(vocab=vocab, edge_vocab=edge_vocab, batch_size=16,
+                         amr_path=test_amr, grp_path=test_grh, linear_amr_path=test_linear_amr, snt_path=test_snt, stadia=1,
+                         shuffle=False)
+
+    # 查看最大的深度
+    import numpy as np
+    max_depth = 0
+    dias = []
+    for idx, ins in enumerate(test_iter.instances):
+        pos = ins.graph_pos
+        ins_max_depth = np.max(ins.graph_pos) - 1
+        dias.append(str(ins_max_depth) + '\n')
+    with open("./diameter-2017.txt", "w") as f:
+        f.writelines(dias)
 
     # for ins in train_iter.instances:
     #     al = len(ins.aligns)
@@ -178,27 +193,6 @@ if __name__ == "__main__":
     # print(max_son_sum)
     # ins = train_iter.instances[ins_id]
     # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)
-
-    # 查看最大的深度
-    # import numpy as np
-    # from collections import Counter
-    # max_depth = 0
-    # ins_id = -1
-    # depths = Counter()
-    # for idx, ins in enumerate(train_iter.instances + dev_iter.instances + test_iter.instances):
-    #     pos = ins.graph_pos
-    #     ins_max_depth = np.max(ins.graph_pos) - 1
-    #     if ins_max_depth == 4:
-    #         visualization_graph(-1, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab, edge_set=[1, 3])
-    #         raise NotImplementedError
-    #     # ins_max_depth = (ins_max_depth - 1) // 2
-    #     depths.update({ins_max_depth: 1})
-    #     if max_depth < ins_max_depth:
-    #         max_depth = ins_max_depth
-    #         ins_id = idx
-    # print(idx)
-    # print(max_depth)
-    # print(depths)
 
     # ins = test_iter.instances[ins_id]
     # visualization_graph(ins.id, ins.indexed_node, ins.adj, ins.indexed_token, inverse_vocab)

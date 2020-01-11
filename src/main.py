@@ -63,9 +63,9 @@ def load_model(args, model):
         model.load_state_dict(torch.load(model_dict_path))
 
     # 打印每一层图卷积中不同方向相对位置的嵌入
-    for idx, layer in enumerate(model.encoder._layers):
-        print(layer.convolution.relative_pos_embder.embeder.weight.detach().cpu())
-    raise NotImplementedError
+    # for idx, layer in enumerate(model.encoder._layers):
+    #     print(layer.convolution.relative_pos_embder.embeder.weight.detach().cpu())
+    # raise NotImplementedError
 
     # 打印每一层图卷积不同方向的权重
     # for idx, layer in enumerate(model.encoder._layers):
@@ -225,7 +225,7 @@ def validation(model, dev_iter):
 
 def build_test_dataiters(args, vocab, edge_vocab):
     test_iter = Iterator(
-        vocab, edge_vocab, 64, args.test_amr, args.test_grh, args.test_linear_amr, args.test_snt, stadia=args.stadia)
+        vocab, edge_vocab, 64, args.test_amr, args.test_grh, args.test_linear_amr, args.test_snt, stadia=args.stadia, shuffle=False)
     return test_iter
 
 
@@ -264,12 +264,15 @@ def test(args, model, test_iter, vocab, inversed_vocab, cuda_device):
         os.mkdir(result_dir)
     bleu = corpus_bleu([[g] for g in gold_snt], pred_snt)
     with open(os.path.join(result_dir, "output.txt"), 'w') as f:
-        lines = ["Corpus bleu score: " + str(bleu) + "\n\n"]
+        # lines = ["Corpus bleu score: " + str(bleu) + "\n\n"]
+        lines = []
         assert len(gold_snt) == len(pred_snt)
         for idx in range(len(gold_snt)):
-            lines.append("snt:: " + " ".join(gold_snt[idx]) + "\n" +
-                         "snt_out:: " + " ".join(pred_snt[idx]) + "\n\n")
+            # lines.append("snt:: " + " ".join(gold_snt[idx]) + "\n" +
+            #              "snt_out:: " + " ".join(pred_snt[idx]) + "\n\n")
+            lines.append(" ".join(pred_snt[idx]) + '\n')
         f.writelines(lines)
+    print(bleu)
     print("Write output success!")
 
 
@@ -307,7 +310,7 @@ if __name__ == "__main__":
     logger = setup_main_logger(__name__, file_logging=True, console=not args.quiet,
                                path=os.path.join(log_dir, C.LOG_NAME))
     if args.cuda_device is not None:
-        cuda_device = torch.device(0)
+        cuda_device = torch.device(args.cuda_device)
     else:
         cuda_device = torch.device('cpu')
     main(args, logger, cuda_device)

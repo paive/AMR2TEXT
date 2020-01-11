@@ -24,7 +24,7 @@ def get_arguments():
     data_version = 'amr2.0'
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cuda_device', type=int, default=0)
+    parser.add_argument('--cuda_device', type=int, default=1)
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'])
 
     # log
