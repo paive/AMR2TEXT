@@ -173,7 +173,6 @@ def pad_instance(ins, src_len, linear_amr_len, tgt_len, stadia):
     new_ins.graph_pos.extend([0] * pl)
     new_ins.aligns.extend([0] * pl)
 
-
     new_adj = np.eye(src_len, src_len) * C.SELF_EDGE_ID
     new_adj[0: node_len, 0:node_len] = new_ins.adj
     new_ins.adj = new_adj

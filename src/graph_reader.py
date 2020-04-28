@@ -154,16 +154,30 @@ if __name__ == "__main__":
                          amr_path=test_amr, grp_path=test_grh, linear_amr_path=test_linear_amr, snt_path=test_snt, stadia=1,
                          shuffle=False)
 
-    # 查看最大的深度
     import numpy as np
-    max_depth = 0
-    dias = []
-    for idx, ins in enumerate(test_iter.instances):
-        pos = ins.graph_pos
-        ins_max_depth = np.max(ins.graph_pos) - 1
-        dias.append(str(ins_max_depth) + '\n')
-    with open("./diameter-2017.txt", "w") as f:
-        f.writelines(dias)
+    lines = []
+    for ins in test_iter.instances:
+        line = str(np.max(ins.graph_pos) - 1)
+        line = line + " ".join(ins.snt.tokens) + "\n"
+        lines.append(line)
+    with open("./dia-snt.txt", "w") as f:
+        f.writelines(lines)
+
+    # # 查看最大的深度
+    # import numpy as np
+    # max_depth = 0
+    # dias = []
+    # sizes = []
+    # for idx, ins in enumerate(test_iter.instances):
+    #     pos = ins.graph_pos
+    #     ins_max_depth = np.max(ins.graph_pos) - 1
+    #     dias.append(str(ins_max_depth) + '\n')
+    #     sizes.append(str(len(ins.amr.nodes)) + '\n')
+
+    # with open("./diameter-2017.txt", "w") as f:
+    #     f.writelines(dias)
+    # with open("./amrsize-2017.txt", "w") as f:
+    #     f.writelines(sizes)
 
     # for ins in train_iter.instances:
     #     al = len(ins.aligns)
